@@ -9,13 +9,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio highgui)
 
 add_library(honta_vision
-    src/vision/circle_detector.cpp
-    src/vision/rtsp_reader.cpp
+    code/src/vision/circle_detector.cpp
+    code/src/vision/rtsp_reader.cpp
 )
 
 target_include_directories(honta_vision
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/code/include
 )
 
 target_link_libraries(honta_vision
@@ -24,7 +24,7 @@ target_link_libraries(honta_vision
 )
 
 add_executable(detect_stream_demo
-    tools/detect_stream_demo.cpp
+    code/tools/detect_stream_demo.cpp
 )
 
 target_link_libraries(detect_stream_demo
@@ -34,5 +34,5 @@ target_link_libraries(detect_stream_demo
 
 target_include_directories(detect_stream_demo
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+        ${CMAKE_CURRENT_SOURCE_DIR}/code/third_party
 )

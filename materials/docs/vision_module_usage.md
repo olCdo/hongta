@@ -1,4 +1,4 @@
-# 视觉模块使用说明
+﻿# 视觉模块使用说明
 
 ## 当前模块
 
@@ -13,21 +13,24 @@
 
 ```text
 CMakeLists.txt
-configs/
-  center_horn_usb_debug.json
-include/
-  honta/vision/
-    circle_detector.h
-    rtsp_reader.h
-src/
-  vision/
-    circle_detector.cpp
-    rtsp_reader.cpp
-tools/
-  detect_stream_demo.cpp
-references/
-assets/reference/
-third_party/
+code/
+  configs/
+    center_horn_usb_debug.json
+  include/
+    honta/vision/
+      circle_detector.h
+      rtsp_reader.h
+  src/
+    vision/
+      circle_detector.cpp
+      rtsp_reader.cpp
+  tools/
+    detect_stream_demo.cpp
+  third_party/
+materials/
+  docs/
+  references/
+  assets/reference/
 ```
 
 ## 构建
@@ -47,7 +50,7 @@ USB 摄像头：
 
 ```powershell
 $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
-.\build_nmake\detect_stream_demo.exe --config configs\center_horn_usb_debug.json
+.\build_nmake\detect_stream_demo.exe --config code\configs\center_horn_usb_debug.json
 ```
 
 RTSP 输入：
@@ -55,7 +58,7 @@ RTSP 输入：
 ```powershell
 $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 .\build_nmake\detect_stream_demo.exe `
-  --config configs\center_horn_usb_debug.json `
+  --config code\configs\center_horn_usb_debug.json `
   --input "rtsp://user:password@192.168.1.10:554/stream1"
 ```
 
@@ -81,3 +84,5 @@ $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 2. 设计 native FFmpeg RTSP 输入/输出管线，包含正式 RTSP 流和 debug RTSP 四宫格流。
 3. 增加 Android NDK `arm64-v8a` 构建。
 4. 基于真实补光样本重新标定默认参数。
+
+

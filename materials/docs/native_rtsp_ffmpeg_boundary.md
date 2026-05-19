@@ -1,4 +1,4 @@
-# Native RTSP/FFmpeg 边界设计
+﻿# Native RTSP/FFmpeg 边界设计
 
 ## 当前结论
 
@@ -57,3 +57,5 @@ RTSP input
 - 本轮不编译 Android FFmpeg。
 - 本轮不实现 RTSP 输出推流。
 - 本轮不实现 JNI 封装。
+
+

@@ -56,7 +56,7 @@ int honta_detect_frame(
 ## 11. 2026-05-19 收束后决策
 
 - 当前工作分支：`codex/converge-vision-module`。
-- 项目结构已按轻量工程化整理：原始资料放入 `references/`，参考图片放入 `assets/reference/`。
+- 项目结构已按轻量工程化整理：原始资料放入 `materials/references/`，参考图片放入 `materials/assets/reference/`。
 - PC 阶段只维护 `detect_stream_demo`，用于 USB 摄像头和 RTSP 实时调试。
 - 算法已收束为统一圆检测，入口通孔和中心喇叭口通过半径、置信度、圆周边缘支撑等参数区分。
 - 旧的单帧/首帧调试入口和中心喇叭口实验分支已从当前主路径移除。
@@ -101,7 +101,7 @@ int honta_detect_frame(
 - 构建：CMake
 - 编译器：Visual Studio Build Tools 2026，MSVC x64
 - OpenCV：官方预编译包，位于 `D:\opencv`
-- JSON：`nlohmann/json` 单头文件，位于 `third_party/nlohmann/json.hpp`
+- JSON：`nlohmann/json` 单头文件，位于 `code/third_party/nlohmann/json.hpp`
 - FFmpeg：本机已有，路径示例：
   - `D:\FFmpeg\ffmpeg-2025-05-19-git-c55d65ac0a-essentials_build\bin\ffmpeg.exe`
   - `D:\FFmpeg\ffmpeg-2025-05-19-git-c55d65ac0a-essentials_build\bin\ffprobe.exe`
@@ -144,8 +144,8 @@ $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 
 文件：
 
-- `include/honta/vision/rtsp_reader.h`
-- `src/vision/rtsp_reader.cpp`
+- `code/include/honta/vision/rtsp_reader.h`
+- `code/src/vision/rtsp_reader.cpp`
 
 当前能力：
 
@@ -161,8 +161,8 @@ $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 
 文件：
 
-- `include/honta/vision/circle_detector.h`
-- `src/vision/circle_detector.cpp`
+- `code/include/honta/vision/circle_detector.h`
+- `code/src/vision/circle_detector.cpp`
 
 当前核心能力：
 
@@ -205,13 +205,13 @@ struct CircleDetectorConfig {
 
 文件：
 
-- `tools/detect_stream_demo.cpp`
+- `code/tools/detect_stream_demo.cpp`
 
 当前能力：
 
 - 支持 `--camera <index>` USB 摄像头输入。
 - 支持 `--input <rtsp_url>` RTSP 输入。
-- 支持 JSON 配置：`--config configs\center_horn_usb_debug.json`
+- 支持 JSON 配置：`--config code\configs\center_horn_usb_debug.json`
 - 支持降采样检测：`process_scale`
 - 支持间隔帧检测：`detect_every`
 - 支持显示宽度控制：`display_width`
@@ -225,7 +225,7 @@ struct CircleDetectorConfig {
 
 当前 USB 调试配置：
 
-- `configs/center_horn_usb_debug.json`
+- `code/configs/center_horn_usb_debug.json`
 
 该配置已按最新实测结论设置为默认关闭全局直方图均衡和 CLAHE：
 
@@ -253,14 +253,14 @@ struct CircleDetectorConfig {
 
 当前已有文档：
 
-- `docs/android_collaboration_dev_doc.md`
-- `docs/android_collaboration_dev_doc_word版.docx`
-- `docs/cpp_dynamic_library_implementation_plan.md`
-- `docs/vision_module_usage.md`
-- `docs/vision_tuning_guide.md`
-- `docs/project_context_reload_summary.md`
+- `materials/docs/android_collaboration_dev_doc.md`
+- `materials/docs/android_collaboration_dev_doc_word版.docx`
+- `materials/docs/cpp_dynamic_library_implementation_plan.md`
+- `materials/docs/vision_module_usage.md`
+- `materials/docs/vision_tuning_guide.md`
+- `materials/docs/project_context_reload_summary.md`
 
-`docs/vision_tuning_guide.md` 已加入：
+`materials/docs/vision_tuning_guide.md` 已加入：
 
 - USB/RTSP 调试说明
 - JSON 字段说明
@@ -377,37 +377,37 @@ struct CircleDetectorConfig {
 - `CMakeLists.txt`
   - 定义 C++17 项目。
   - 查找 OpenCV。
-  - 为 `detect_stream_demo` 增加 `third_party` include，用于 `nlohmann/json`。
+  - 为 `detect_stream_demo` 增加 `code/third_party` include，用于 `nlohmann/json`。
 
 ### 7.2 头文件
 
-- `include/honta/vision/circle_detector.h`
+- `code/include/honta/vision/circle_detector.h`
   - 定义 `CircleDetectorConfig`。
   - 定义 `CircleDetection`。
   - 新增 `PreprocessDebugImages`。
   - 新增 `buildPreprocessDebugImages` 接口。
 
-- `include/honta/vision/rtsp_reader.h`
+- `code/include/honta/vision/rtsp_reader.h`
   - 定义 `RtspReaderConfig`。
   - 定义 `RtspReader`。
   - 定义 `LatestFrameReader`。
 
 ### 7.3 实现文件
 
-- `src/vision/circle_detector.cpp`
+- `code/src/vision/circle_detector.cpp`
   - 实现灰度化、模糊、可选均衡、可选 CLAHE。
   - 实现 Hough 圆检测。
   - 实现轮廓 fallback。
   - 实现圆周边缘支撑过滤。
   - 实现调试图生成。
 
-- `src/vision/rtsp_reader.cpp`
+- `code/src/vision/rtsp_reader.cpp`
   - 实现 RTSP 打开、读取、重连。
   - 实现后台最新帧读取。
 
 ### 7.4 工具文件
 
-- `tools/detect_stream_demo.cpp`
+- `code/tools/detect_stream_demo.cpp`
   - 支持 `--camera <index>`。
   - 支持 `--input <rtsp_url>`。
   - 支持 `--config <json>`。
@@ -421,11 +421,11 @@ struct CircleDetectorConfig {
 
 ### 7.5 配置与第三方
 
-- `configs/center_horn_usb_debug.json`
+- `code/configs/center_horn_usb_debug.json`
   - USB 摄像头调试配置。
   - 当前已设置 `enable_hist_equalization=false`、`enable_clahe=false`。
 
-- `third_party/nlohmann/json.hpp`
+- `code/third_party/nlohmann/json.hpp`
   - 用于解析 JSON 配置。
 
 ### 7.6 调试产物
@@ -537,7 +537,7 @@ Android App 控制启动、停止、配置和显示状态
 下次对话可直接说：
 
 ```text
-读取 docs/project_context_reload_summary.md，继续 Honta 视觉动态库项目。
+读取 materials/docs/project_context_reload_summary.md，继续 Honta 视觉动态库项目。
 ```
 
 ## 10. 当前 Git 状态提醒
@@ -545,7 +545,7 @@ Android App 控制启动、停止、配置和显示状态
 当前仓库存在大量未跟踪文件和部分已修改文件：
 
 - `readme.md` 已修改。
-- `CMakeLists.txt`、`docs/`、`include/`、`src/`、`tools/`、`configs/`、`third_party/` 等多为新增内容。
+- `CMakeLists.txt`、`materials/docs/`、`code/include/`、`code/src/`、`code/tools/`、`code/configs/`、`code/third_party/` 等多为新增内容。
 - `build/`、`build_nmake/` 是构建产物。
 - `stream_debug_*.jpg`、`output_*.jpg` 是调试产物。
 - `render_tmp/...` 存在权限警告，可忽略或后续清理。
@@ -561,4 +561,6 @@ output_*.jpg
 render_tmp/
 *.obj
 ```
+
+
 

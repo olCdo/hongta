@@ -7,9 +7,9 @@
 资料来源：
 
 - `readme.md`：项目背景、顶盖解析、坐标转换、靶球任务流程。
-- `references/NEST X使用文档.docx`：NEST 控制器 API、建图、导航、地图、机器人状态、网络配置等接口。
-- `references/靶球车体ui设计.docx`：APP 页面与交互功能草案。
-- `references/项目内容 (1).docx`：系统架构、硬件配置、APP 交付功能描述。
+- `materials/references/NEST X使用文档.docx`：NEST 控制器 API、建图、导航、地图、机器人状态、网络配置等接口。
+- `materials/references/靶球车体ui设计.docx`：APP 页面与交互功能草案。
+- `materials/references/项目内容 (1).docx`：系统架构、硬件配置、APP 交付功能描述。
 
 ## 2. 项目背景
 
@@ -536,4 +536,6 @@ APP 端作为 Modbus TCP 服务器，上位机作为 Modbus TCP 客户端。
 10. APP 可展示任务状态，并支持取消任务和确认状态。
 
 第二阶段再补齐建图、地图管理、WiFi、技术人员权限、Modbus TCP 寄存器细节联调等功能。
+
+
 

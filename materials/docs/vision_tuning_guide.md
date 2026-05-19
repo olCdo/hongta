@@ -1,4 +1,4 @@
-# 视觉识别现场调参文档
+﻿# 视觉识别现场调参文档
 
 本文面向现场调试人员，说明 `detect_stream_demo` 的 JSON 配置、常用启动方式和调参顺序。
 
@@ -10,20 +10,20 @@ USB 摄像头调试：
 
 ```powershell
 $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
-.\build_nmake\detect_stream_demo.exe --config configs\center_horn_usb_debug.json
+.\build_nmake\detect_stream_demo.exe --config code\configs\center_horn_usb_debug.json
 ```
 
 临时覆盖摄像头编号：
 
 ```powershell
-.\build_nmake\detect_stream_demo.exe --config configs\center_horn_usb_debug.json --camera 1
+.\build_nmake\detect_stream_demo.exe --config code\configs\center_horn_usb_debug.json --camera 1
 ```
 
 RTSP 调试：
 
 ```powershell
 .\build_nmake\detect_stream_demo.exe `
-  --config configs\center_horn_usb_debug.json `
+  --config code\configs\center_horn_usb_debug.json `
   --input "rtsp://admin:admin@192.168.0.120:554/11"
 ```
 
@@ -140,3 +140,5 @@ stream_debug_帧号_edges.jpg
 ```
 
 后续 native RTSP/FFmpeg 阶段会增加单独一路 debug RTSP，四宫格输出 `overlay`、`gray/blur`、`preprocess`、`edges`，不替换正式 RTSP 输出。
+
+
