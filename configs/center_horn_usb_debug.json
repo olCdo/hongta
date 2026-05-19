@@ -1,0 +1,43 @@
+{
+  "input": {
+    "camera_index": 0,
+    "camera_width": 1920,
+    "camera_height": 1080,
+    "camera_fps": 30
+  },
+  "detection": {
+    "type": "center",
+    "center_mode": "rim",
+    "min_radius_px": 50,
+    "max_radius_px": 220,
+    "min_confidence": 0.6,
+    "enable_hist_equalization": false,
+    "enable_clahe": false,
+    "clahe_clip_limit": 2.0,
+    "clahe_tile_grid_size": 8,
+    "max_results": 3,
+    "max_radius_image_ratio": 0.22,
+    "min_rim_edge_support": 0.45,
+    "enable_ring_validation": false,
+    "min_ring_contrast": 6.0,
+    "min_ring_edge_strength": 15.0,
+    "min_ring_gradient_alignment": 0.3,
+    "canny_high_threshold": 120,
+    "hough_accumulator_threshold": 25,
+    "roi": [
+      560,
+      160,
+      800,
+      800
+    ],
+    "require_circle_inside_roi": false,
+    "draw_roi": true
+  },
+  "runtime": {
+    "process_scale": 0.5,
+    "detect_every": 2,
+    "display_width": 960,
+    "latest_frame_mode": true,
+    "save_debug_stages": true
+  }
+}

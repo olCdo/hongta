@@ -1,0 +1,15 @@
+build/
+build_nmake/
+.codex_tmp/
+render_tmp/
+
+stream_debug_*.jpg
+output_*.jpg
+
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
