@@ -30,7 +30,6 @@ struct Args {
     int camera_height = 0;
     double camera_fps = 0.0;
     std::string config_path;
-    std::string target = "entrance";
     int min_radius = 12;
     int max_radius = 320;
     int max_results = 10;
@@ -41,17 +40,12 @@ struct Args {
     int clahe_tile_grid_size = 8;
     double canny_threshold = 120.0;
     double hough_threshold = 28.0;
-    bool min_radius_set = false;
-    bool max_results_set = false;
     double max_radius_ratio = 0.22;
     bool latest_frame_mode = true;
     double min_rim_edge_support = 0.24;
-    cv::Rect roi{};
     double process_scale = 0.5;
     int detect_every = 1;
     int display_width = 1280;
-    bool require_circle_inside_roi = false;
-    bool draw_roi = true;
     bool save_debug_stages = false;
 };
 
@@ -60,14 +54,12 @@ void printUsage() {
         << "Usage:\n"
         << "  detect_stream_demo [--config config.json]\n"
         << "                     (--input <rtsp_url|video> | --camera <index>)\n"
-        << "                     [--type entrance|center|generic]\n"
         << "                     [--min-radius px] [--max-radius px] [--min-confidence value]\n"
         << "                     [--max-results n] [--max-radius-ratio value]\n"
         << "                     [--min-rim-edge-support value] [--canny-threshold value]\n"
-        << "                     [--hough-threshold value] [--roi x,y,w,h] [--no-latest-frame]\n"
+        << "                     [--hough-threshold value] [--no-latest-frame]\n"
         << "                     [--process-scale value] [--detect-every n] [--display-width px]\n"
         << "                     [--camera-width px] [--camera-height px] [--camera-fps value]\n"
-        << "                     [--require-circle-inside-roi] [--hide-roi]\n"
         << "Keys: q/ESC quit, s save current debug frame.\n";
 }
 
@@ -82,21 +74,6 @@ bool parseConfigPath(int argc, char** argv, std::string& config_path) {
             config_path = argv[++i];
         }
     }
-    return true;
-}
-
-bool parseRoi(const std::string& value, cv::Rect& roi) {
-    std::string normalized = value;
-    std::replace(normalized.begin(), normalized.end(), ',', ' ');
-    std::istringstream stream(normalized);
-    int x = 0;
-    int y = 0;
-    int width = 0;
-    int height = 0;
-    if (!(stream >> x >> y >> width >> height) || width <= 0 || height <= 0) {
-        return false;
-    }
-    roi = {x, y, width, height};
     return true;
 }
 
@@ -156,7 +133,6 @@ bool loadConfig(const std::string& path, Args& args) {
                 std::cerr << "Invalid config: detection must be an object\n";
                 return false;
             }
-            setIfPresent(detection, "type", args.target);
             setIfPresent(detection, "min_radius_px", args.min_radius);
             setIfPresent(detection, "max_radius_px", args.max_radius);
             setIfPresent(detection, "min_confidence", args.min_confidence);
@@ -168,26 +144,8 @@ bool loadConfig(const std::string& path, Args& args) {
             setIfPresent(detection, "hough_accumulator_threshold", args.hough_threshold);
             setIfPresent(detection, "max_radius_image_ratio", args.max_radius_ratio);
             setIfPresent(detection, "min_rim_edge_support", args.min_rim_edge_support);
-            setIfPresent(detection, "require_circle_inside_roi", args.require_circle_inside_roi);
-            setIfPresent(detection, "draw_roi", args.draw_roi);
             if (detection.contains("max_results")) {
                 args.max_results = detection.at("max_results").get<int>();
-                args.max_results_set = true;
-            }
-            if (detection.contains("roi")) {
-                const auto& roi = detection.at("roi");
-                if (!roi.is_array() || roi.size() != 4) {
-                    std::cerr << "Invalid config: detection.roi must be [x, y, width, height]\n";
-                    return false;
-                }
-                args.roi = {roi.at(0).get<int>(),
-                            roi.at(1).get<int>(),
-                            roi.at(2).get<int>(),
-                            roi.at(3).get<int>()};
-                if (args.roi.width <= 0 || args.roi.height <= 0) {
-                    std::cerr << "Invalid config: detection.roi width and height must be > 0\n";
-                    return false;
-                }
             }
         }
 
@@ -233,18 +191,14 @@ bool parseArgs(int argc, char** argv, Args& args) {
             args.camera_height = std::stoi(argv[++i]);
         } else if (key == "--camera-fps" && i + 1 < argc) {
             args.camera_fps = std::stod(argv[++i]);
-        } else if (key == "--type" && i + 1 < argc) {
-            args.target = argv[++i];
         } else if (key == "--min-radius" && i + 1 < argc) {
             args.min_radius = std::stoi(argv[++i]);
-            args.min_radius_set = true;
         } else if (key == "--max-radius" && i + 1 < argc) {
             args.max_radius = std::stoi(argv[++i]);
         } else if (key == "--min-confidence" && i + 1 < argc) {
             args.min_confidence = std::stod(argv[++i]);
         } else if (key == "--max-results" && i + 1 < argc) {
             args.max_results = std::stoi(argv[++i]);
-            args.max_results_set = true;
         } else if (key == "--canny-threshold" && i + 1 < argc) {
             args.canny_threshold = std::stod(argv[++i]);
         } else if (key == "--hough-threshold" && i + 1 < argc) {
@@ -253,21 +207,12 @@ bool parseArgs(int argc, char** argv, Args& args) {
             args.max_radius_ratio = std::stod(argv[++i]);
         } else if (key == "--min-rim-edge-support" && i + 1 < argc) {
             args.min_rim_edge_support = std::stod(argv[++i]);
-        } else if (key == "--roi" && i + 1 < argc) {
-            if (!parseRoi(argv[++i], args.roi)) {
-                std::cerr << "Invalid ROI, expected x,y,w,h\n";
-                return false;
-            }
         } else if (key == "--process-scale" && i + 1 < argc) {
             args.process_scale = std::stod(argv[++i]);
         } else if (key == "--detect-every" && i + 1 < argc) {
             args.detect_every = std::max(1, std::stoi(argv[++i]));
         } else if (key == "--display-width" && i + 1 < argc) {
             args.display_width = std::max(320, std::stoi(argv[++i]));
-        } else if (key == "--require-circle-inside-roi") {
-            args.require_circle_inside_roi = true;
-        } else if (key == "--hide-roi") {
-            args.draw_roi = false;
         } else if (key == "--no-latest-frame") {
             args.latest_frame_mode = false;
         } else {
@@ -293,12 +238,6 @@ bool parseArgs(int argc, char** argv, Args& args) {
         std::cerr << "Invalid process scale, expected 0 < value <= 1\n";
         return false;
     }
-    const honta::vision::DetectionTarget target = honta::vision::detectionTargetFromString(args.target);
-    if (target == honta::vision::DetectionTarget::CenterHorn) {
-        if (!args.max_results_set) {
-            args.max_results = 1;
-        }
-    }
     return true;
 }
 
@@ -314,16 +253,6 @@ std::vector<honta::vision::CircleDetection> scaleDetections(std::vector<honta::v
         detection.radius *= inverse;
     }
     return detections;
-}
-
-cv::Rect scaleRoi(const cv::Rect& roi, double scale) {
-    if (roi.width <= 0 || roi.height <= 0 || scale == 1.0) {
-        return roi;
-    }
-    return {static_cast<int>(std::round(roi.x * scale)),
-            static_cast<int>(std::round(roi.y * scale)),
-            static_cast<int>(std::round(roi.width * scale)),
-            static_cast<int>(std::round(roi.height * scale))};
 }
 
 void drawStatusOverlay(cv::Mat& frame,
@@ -397,16 +326,12 @@ int main(int argc, char** argv) {
     detector_config.hough_accumulator_threshold = args.hough_threshold;
     detector_config.max_radius_image_ratio = args.max_radius_ratio;
     detector_config.min_rim_edge_support = args.min_rim_edge_support;
-    detector_config.roi = scaleRoi(args.roi, args.process_scale);
-    detector_config.require_circle_inside_roi = args.require_circle_inside_roi;
-    detector_config.draw_roi = args.draw_roi;
     detector_config.min_radius_px = std::max(1, static_cast<int>(std::round(detector_config.min_radius_px * args.process_scale)));
     detector_config.max_radius_px = std::max(detector_config.min_radius_px,
                                              static_cast<int>(std::round(detector_config.max_radius_px * args.process_scale)));
     detector_config.min_dist_px *= args.process_scale;
 
     honta::vision::CircleDetector detector(detector_config);
-    const honta::vision::DetectionTarget target = honta::vision::detectionTargetFromString(args.target);
 
     cv::namedWindow("honta detect stream", cv::WINDOW_NORMAL);
     int frame_index = 0;
@@ -477,13 +402,10 @@ int main(int argc, char** argv) {
             } else {
                 cv::resize(frame, process_frame, {}, args.process_scale, args.process_scale, cv::INTER_AREA);
             }
-            last_detections = scaleDetections(detector.detect(process_frame, target), args.process_scale);
+            last_detections = scaleDetections(detector.detect(process_frame), args.process_scale);
         }
 
         honta::vision::CircleDetectorConfig draw_config = detector_config;
-        draw_config.roi = args.roi;
-        draw_config.require_circle_inside_roi = args.require_circle_inside_roi;
-        draw_config.draw_roi = args.draw_roi;
         honta::vision::CircleDetector draw_detector(draw_config);
         last_debug = draw_detector.drawDetections(frame, last_detections);
         drawStatusOverlay(last_debug, frame_index, last_detections);

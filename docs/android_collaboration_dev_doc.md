@@ -254,7 +254,7 @@
 | --- | --- | --- |
 | `init(config)` | APP -> C++ | 初始化算法、相机参数、顶盖数据目录等。 |
 | `setTopCoverModel(modelId)` | APP -> C++ | 设置顶盖型号。 |
-| `startDetect(targetType)` | APP -> C++ | 开始识别，`targetType` 区分入口通孔或中心喇叭口。 |
+| `startDetect(config)` | APP -> C++ | 开始识别，入口通孔和中心喇叭口通过不同圆检测参数配置区分。 |
 | `stopDetect()` | APP -> C++ | 停止识别。 |
 | `processFrame(frame)` | APP -> C++ | APP 解码 RTSP 时，逐帧传入算法。 |
 | `getDetections()` | APP -> C++ | 获取当前识别候选。 |
@@ -509,7 +509,7 @@ APP 端作为 Modbus TCP 服务器，上位机作为 Modbus TCP 客户端。
 以下内容不影响安卓先做页面和流程骨架，但需要在联调前明确：
 
 - C++ 动态库后续按 native RTSP/FFmpeg 管线接入 RTSP。
-- C++ 动态库后续输出 RTSP 圈注流，并按需提供识别结果 JSON 和调试图。
+- C++ 动态库后续输出正式 RTSP 圈注流；debug 模式单独输出一路四宫格 RTSP 调试流。
 - 顶盖图纸解析数据格式：XML、JSON、CSV 或其他格式。
 - 顶盖型号与图纸文件的管理方式：APP 内置、服务器下发、用户导入或动态库目录读取。
 - 相机内参、畸变参数、相机相对车体安装位姿的配置与版本管理。

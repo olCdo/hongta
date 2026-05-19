@@ -2,7 +2,7 @@
 
 ## 当前模块
 
-- `CircleDetector`：入口通孔、中心喇叭口和通用圆形目标检测。
+- `CircleDetector`：统一圆形目标检测。入口通孔和中心喇叭口通过不同半径、置信度和圆周边缘支撑参数区分。
 - `RtspReader`：PC 调试用 RTSP/视频读取封装，基于 OpenCV `VideoCapture`。
 - `LatestFrameReader`：PC 调试用后台读取器，只保留最新帧，降低 RTSP 显示延迟。
 - `detect_stream_demo`：当前唯一维护的 PC 实时调试工具，支持 USB 摄像头和 RTSP 输入。
@@ -66,11 +66,11 @@ $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 
 ## 当前识别策略
 
-中心喇叭口固定使用外圆边缘识别路径：
+当前统一使用圆形目标检测路径：
 
 - 默认关闭全局直方图均衡。
 - 默认关闭 CLAHE。
-- 通过 `min_rim_edge_support`、ROI、半径范围和 Hough 阈值控制误识别。
+- 通过 `min_rim_edge_support`、半径范围和 Hough 阈值控制误识别。
 - 已移除早期中心目标实验分支。
 
 ## 后续工作
@@ -78,6 +78,6 @@ $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 下一阶段重点：
 
 1. 设计 `honta_api.h` C ABI。
-2. 设计 native FFmpeg RTSP 输入/输出管线。
+2. 设计 native FFmpeg RTSP 输入/输出管线，包含正式 RTSP 流和 debug RTSP 四宫格流。
 3. 增加 Android NDK `arm64-v8a` 构建。
 4. 基于真实补光样本重新标定默认参数。

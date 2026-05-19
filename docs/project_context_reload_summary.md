@@ -16,8 +16,8 @@
 3. 视频解码使用 FFmpeg。
 4. C++ 视觉模块处理视频帧，识别入口通孔、中心喇叭口等圆形目标。
 5. 客户需要看到识别结果圈在画面上。
-6. 推荐正式显示方式是：C++ 输出识别结果坐标，App 在视频画面上叠加画圈。
-7. 调试阶段可保留 C++ 生成的调试图，例如边缘图、预处理图、圈注图。
+6. 正式 RTSP 输出画面为原始视频叠加识别圆圈、圆心、编号和置信度。
+7. Debug 模式单独输出一路 RTSP 四宫格调试流，包含 overlay、gray/blur、preprocess、edges。
 8. 后续坐标计算模块根据入口通孔、中心喇叭口、AMR 位姿、顶盖型号等数据，计算全部喇叭口在 AMR 地图中的坐标。
 
 ## 2. 当前关键决策
@@ -27,8 +27,8 @@
 - 最终 Android 集成方向：输入和输出都面向 RTSP 流方案，解码使用 FFmpeg。
 - USB 摄像头输入暂时保留，用于 PC 阶段调试算法。
 - C++ 算法核心不应该依赖 Android UI，也不应该长期绑定 PC 窗口显示。
-- 客户要看圈注结果，但推荐由 App 根据 C++ 返回的圆心、半径、置信度自行在视频画面上画圈。
-- C++ 返回整张 RGBA8888 圈注图只建议作为调试能力，不建议作为正式每帧主输出。
+- 客户主画面看正式 RTSP 圈注流。
+- 工程调试看单独一路 debug RTSP 四宫格流，不替换客户主画面。
 
 ### 2.2 Android 动态库边界
 
@@ -58,23 +58,10 @@ int honta_detect_frame(
 - 当前工作分支：`codex/converge-vision-module`。
 - 项目结构已按轻量工程化整理：原始资料放入 `references/`，参考图片放入 `assets/reference/`。
 - PC 阶段只维护 `detect_stream_demo`，用于 USB 摄像头和 RTSP 实时调试。
-- 中心喇叭口识别固定走外圆 rim 边缘路径，默认关闭全局直方图均衡和 CLAHE。
+- 算法已收束为统一圆检测，入口通孔和中心喇叭口通过半径、置信度、圆周边缘支撑等参数区分。
 - 旧的单帧/首帧调试入口和中心喇叭口实验分支已从当前主路径移除。
-- 正式 Android 方向为 native RTSP 输入/输出与 FFmpeg 解码/编码/推流。
+- 正式 Android 方向为 native RTSP 输入/输出与 FFmpeg 解码/编码/推流，输出包含正式流和 debug 流。
 - 本轮不实现完整 native FFmpeg 管线；下一阶段先设计 `honta_api.h`、native pipeline 生命周期接口和 Android NDK `arm64-v8a` 构建。
-
-调试图按需输出，不建议每帧默认输出：
-
-```cpp
-int honta_get_debug_image(
-    int debug_type,
-    int output_format,
-    unsigned char* output_data,
-    int output_width,
-    int output_height,
-    int output_stride
-);
-```
 
 ### 2.3 识别算法方向
 
@@ -88,7 +75,7 @@ int honta_get_debug_image(
   -> Canny 边缘
   -> Hough 圆检测
   -> 轮廓 fallback
-  -> ROI/半径/边缘支撑过滤
+  -> 半径/边缘支撑过滤
   -> 合并排序
   -> 输出候选圆
 ```
@@ -104,7 +91,7 @@ int honta_get_debug_image(
 
 ### 2.4 已试验但不建议默认启用的能力
 
-- `generic` 通用圆和 `entrance` 入口识别仍可用于调试/业务扩展，但当前调试重点是 `center` 中心喇叭口。
+- 入口通孔和中心喇叭口都按圆检测处理，不再通过算法类型分支区分。
 
 ## 3. 当前技术栈与构建方式
 
@@ -185,8 +172,6 @@ $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 - 可选 CLAHE
 - Hough 圆检测
 - 轮廓 fallback
-- 暗色区域检测实验分支
-- ROI 过滤
 - 圆周边缘支撑度过滤
 - 候选合并和排序
 - 圈注图绘制
@@ -204,19 +189,14 @@ struct CircleDetectorConfig {
     double canny_high_threshold = 120.0;
     double hough_accumulator_threshold = 28.0;
     int gaussian_kernel_size = 7;
-    bool enable_hist_equalization = true;
+    bool enable_hist_equalization = false;
     bool enable_clahe = false;
     double clahe_clip_limit = 2.0;
     int clahe_tile_grid_size = 8;
     bool enable_contour_fallback = true;
     int max_results = 20;
-    double min_circularity = 0.65;
-    double min_fill_ratio = 0.55;
     double max_radius_image_ratio = 0.22;
     double min_rim_edge_support = 0.24;
-    cv::Rect roi{};
-    bool require_circle_inside_roi = false;
-    bool draw_roi = true;
 };
 ```
 
@@ -235,7 +215,6 @@ struct CircleDetectorConfig {
 - 支持降采样检测：`process_scale`
 - 支持间隔帧检测：`detect_every`
 - 支持显示宽度控制：`display_width`
-- 支持 ROI 显示和过滤。
 - 按 `q` 或 ESC 退出。
 - 按 `s` 保存当前标注图。
 - `save_debug_stages=true` 时保存：
@@ -286,7 +265,6 @@ struct CircleDetectorConfig {
 - USB/RTSP 调试说明
 - JSON 字段说明
 - 空白墙误识别分析
-- ROI 调整方法
 - 预处理调试图说明
 
 该文档后续需要根据最新“输入/输出 RTSP、FFmpeg 解码、Android 动态库边界”重新收束。
@@ -315,11 +293,9 @@ struct CircleDetectorConfig {
 
 当前还可能识别到影子。用户计划后续通过补光改善。算法层面可以后续考虑：
 
-- 缩小 ROI。
 - 限制半径范围。
 - 提高 Hough 阈值。
 - 提高圆周边缘支撑度。
-- 结合目标真实安装位置做动态 ROI。
 
 ## 6. 待办事项
 
@@ -342,9 +318,8 @@ struct CircleDetectorConfig {
 - 默认关闭：
   - `enable_hist_equalization`
   - `enable_clahe`
-- 考虑移除或归档以下实验分支：
-  - 暗色区域检测
-- 将中心喇叭口识别收束为 `rim` 外圆边缘模式。
+- 入口通孔和中心喇叭口统一使用圆检测路径。
+- 通过半径范围、置信度、圆周边缘支撑等参数区分不同目标。
 - 保留预处理调试图能力，便于现场排查。
 - 基于真实补光后的样本重新调整默认参数。
 
@@ -356,9 +331,9 @@ struct CircleDetectorConfig {
   - 调试阶段可支持 `RGBA8888`
   - 后续性能优化建议支持 `GRAY8`、`NV21` 或 `YUV_420_888`
 - 定义输出：
-  - 正式输出识别 JSON 或结构体。
-  - 客户显示由 App 画 overlay 圆。
-  - 调试图按需输出，不默认每帧输出整张 RGBA 图。
+  - 正式 RTSP 输出原始画面 + 圈注 overlay。
+  - Debug 模式单独输出一路 RTSP 四宫格调试流。
+  - 识别结果 JSON 或结构体按需提供给 App。
 - 设计错误码、初始化、释放、配置加载接口。
 - 实现 Android NDK `arm64-v8a` 构建。
 
@@ -407,7 +382,6 @@ struct CircleDetectorConfig {
 ### 7.2 头文件
 
 - `include/honta/vision/circle_detector.h`
-  - 定义 `DetectionTarget`。
   - 定义 `CircleDetectorConfig`。
   - 定义 `CircleDetection`。
   - 新增 `PreprocessDebugImages`。
@@ -424,8 +398,6 @@ struct CircleDetectorConfig {
   - 实现灰度化、模糊、可选均衡、可选 CLAHE。
   - 实现 Hough 圆检测。
   - 实现轮廓 fallback。
-  - 实现暗色区域检测实验分支。
-  - 实现 ROI 过滤。
   - 实现圆周边缘支撑过滤。
   - 实现调试图生成。
 
@@ -488,10 +460,10 @@ CircleDetector
   |
   +-- 灰度化/模糊/边缘
   +-- Hough/轮廓候选
-  +-- ROI/半径/边缘支撑过滤
+  +-- 半径/边缘支撑过滤
   |
   v
-识别结果 + 本地窗口显示 + 调试图保存
+识别结果 + 本地窗口显示 + 调试图保存，后续 native 阶段输出 debug RTSP 四宫格流
 ```
 
 ### 8.2 推荐 Android 分层架构

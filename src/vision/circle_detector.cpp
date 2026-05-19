@@ -21,18 +21,6 @@ double distance(const cv::Point2f& a, const cv::Point2f& b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
-cv::Scalar colorForTarget(DetectionTarget target) {
-    switch (target) {
-        case DetectionTarget::EntranceHole:
-            return {0, 220, 255};
-        case DetectionTarget::CenterHorn:
-            return {0, 255, 80};
-        case DetectionTarget::GenericCircle:
-        default:
-            return {255, 160, 0};
-    }
-}
-
 bool hasEdgeNear(const cv::Mat& edges, int x, int y, int radius) {
     for (int yy = std::max(0, y - radius); yy <= std::min(edges.rows - 1, y + radius); ++yy) {
         for (int xx = std::max(0, x - radius); xx <= std::min(edges.cols - 1, x + radius); ++xx) {
@@ -89,21 +77,20 @@ CircleDetector::CircleDetector(CircleDetectorConfig config) : config_(config) {
     }
 }
 
-std::vector<CircleDetection> CircleDetector::detect(const cv::Mat& frame, DetectionTarget target) const {
+std::vector<CircleDetection> CircleDetector::detect(const cv::Mat& frame) const {
     if (frame.empty()) {
         return {};
     }
 
     cv::Mat gray = preprocess(frame);
 
-    std::vector<CircleDetection> detections = detectByHough(gray, target);
+    std::vector<CircleDetection> detections = detectByHough(gray);
 
     if (config_.enable_contour_fallback) {
-        std::vector<CircleDetection> contour_detections = detectByContours(gray, target);
+        std::vector<CircleDetection> contour_detections = detectByContours(gray);
         detections.insert(detections.end(), contour_detections.begin(), contour_detections.end());
     }
 
-    filterByRoi(detections);
     return mergeAndRank(std::move(detections));
 }
 
@@ -115,16 +102,8 @@ cv::Mat CircleDetector::drawDetections(const cv::Mat& frame, const std::vector<C
         output = frame.clone();
     }
 
-    if (config_.draw_roi && config_.roi.width > 0 && config_.roi.height > 0) {
-        const cv::Rect image_rect(0, 0, output.cols, output.rows);
-        const cv::Rect roi = config_.roi & image_rect;
-        if (roi.width > 0 && roi.height > 0) {
-            cv::rectangle(output, roi, {255, 180, 0}, 2, cv::LINE_AA);
-        }
-    }
-
+    const cv::Scalar color{0, 255, 80};
     for (const CircleDetection& detection : detections) {
-        const cv::Scalar color = colorForTarget(detection.target);
         const cv::Point center(static_cast<int>(std::round(detection.center.x)),
                                static_cast<int>(std::round(detection.center.y)));
         cv::circle(output, center, static_cast<int>(std::round(detection.radius)), color, 2, cv::LINE_AA);
@@ -197,7 +176,7 @@ PreprocessDebugImages CircleDetector::buildPreprocessDebugImages(const cv::Mat& 
     return images;
 }
 
-std::vector<CircleDetection> CircleDetector::detectByHough(const cv::Mat& gray, DetectionTarget target) const {
+std::vector<CircleDetection> CircleDetector::detectByHough(const cv::Mat& gray) const {
     cv::Mat edges;
     cv::Canny(gray, edges, config_.canny_high_threshold * 0.5, config_.canny_high_threshold);
 
@@ -224,13 +203,10 @@ std::vector<CircleDetection> CircleDetector::detectByHough(const cv::Mat& gray, 
         const double radius_score = clamp01(static_cast<double>(radius - config_.min_radius_px) /
                                             static_cast<double>(config_.max_radius_px - config_.min_radius_px + 1));
         const double support = rimEdgeSupport(edges, {circle[0], circle[1]}, radius);
-        if (target == DetectionTarget::CenterHorn && support < config_.min_rim_edge_support) {
+        if (support < config_.min_rim_edge_support) {
             continue;
         }
-        double confidence = clamp01(0.55 + 0.35 * radius_score);
-        if (target == DetectionTarget::CenterHorn) {
-            confidence = clamp01(0.20 + 0.35 * radius_score + 0.60 * support);
-        }
+        const double confidence = clamp01(0.20 + 0.35 * radius_score + 0.60 * support);
         if (confidence < config_.min_confidence) {
             continue;
         }
@@ -239,14 +215,13 @@ std::vector<CircleDetection> CircleDetector::detectByHough(const cv::Mat& gray, 
         detection.center = {circle[0], circle[1]};
         detection.radius = radius;
         detection.confidence = confidence;
-        detection.target = target;
         detections.push_back(detection);
     }
 
     return detections;
 }
 
-std::vector<CircleDetection> CircleDetector::detectByContours(const cv::Mat& gray, DetectionTarget target) const {
+std::vector<CircleDetection> CircleDetector::detectByContours(const cv::Mat& gray) const {
     cv::Mat edges;
     cv::Canny(gray, edges, config_.canny_high_threshold * 0.5, config_.canny_high_threshold);
 
@@ -276,13 +251,10 @@ std::vector<CircleDetection> CircleDetector::detectByContours(const cv::Mat& gra
         const double perimeter = cv::arcLength(contour, true);
         const double circularity = perimeter > 0.0 ? 4.0 * CV_PI * area / (perimeter * perimeter) : 0.0;
         const double support = rimEdgeSupport(edges, center, radius);
-        if (target == DetectionTarget::CenterHorn && support < config_.min_rim_edge_support) {
+        if (support < config_.min_rim_edge_support) {
             continue;
         }
-        double confidence = clamp01(0.55 * circularity + 0.45 * std::min(fill_ratio, 1.0));
-        if (target == DetectionTarget::CenterHorn) {
-            confidence = clamp01(0.45 * circularity + 0.25 * std::min(fill_ratio, 1.0) + 0.35 * support);
-        }
+        const double confidence = clamp01(0.45 * circularity + 0.25 * std::min(fill_ratio, 1.0) + 0.35 * support);
         if (confidence < config_.min_confidence) {
             continue;
         }
@@ -291,35 +263,10 @@ std::vector<CircleDetection> CircleDetector::detectByContours(const cv::Mat& gra
         detection.center = center;
         detection.radius = radius;
         detection.confidence = confidence;
-        detection.target = target;
         detections.push_back(detection);
     }
 
     return detections;
-}
-
-void CircleDetector::filterByRoi(std::vector<CircleDetection>& detections) const {
-    if (config_.roi.width <= 0 || config_.roi.height <= 0) {
-        return;
-    }
-
-    detections.erase(std::remove_if(detections.begin(), detections.end(), [this](const CircleDetection& detection) {
-                         const float left = detection.center.x - detection.radius;
-                         const float right = detection.center.x + detection.radius;
-                         const float top = detection.center.y - detection.radius;
-                         const float bottom = detection.center.y + detection.radius;
-                         const float roi_right = static_cast<float>(config_.roi.x + config_.roi.width);
-                         const float roi_bottom = static_cast<float>(config_.roi.y + config_.roi.height);
-
-                         if (config_.require_circle_inside_roi) {
-                             return left < config_.roi.x || top < config_.roi.y || right >= roi_right ||
-                                    bottom >= roi_bottom;
-                         }
-
-                         return detection.center.x < config_.roi.x || detection.center.y < config_.roi.y ||
-                                detection.center.x >= roi_right || detection.center.y >= roi_bottom;
-                     }),
-                     detections.end());
 }
 
 std::vector<CircleDetection> CircleDetector::mergeAndRank(std::vector<CircleDetection> detections) const {
@@ -353,28 +300,6 @@ std::vector<CircleDetection> CircleDetector::mergeAndRank(std::vector<CircleDete
     }
 
     return merged;
-}
-
-std::string toString(DetectionTarget target) {
-    switch (target) {
-        case DetectionTarget::EntranceHole:
-            return "entrance_hole";
-        case DetectionTarget::CenterHorn:
-            return "center_horn";
-        case DetectionTarget::GenericCircle:
-        default:
-            return "generic_circle";
-    }
-}
-
-DetectionTarget detectionTargetFromString(const std::string& value) {
-    if (value == "entrance" || value == "entrance_hole") {
-        return DetectionTarget::EntranceHole;
-    }
-    if (value == "center" || value == "center_horn") {
-        return DetectionTarget::CenterHorn;
-    }
-    return DetectionTarget::GenericCircle;
 }
 
 }  // namespace honta::vision
