@@ -1,4 +1,4 @@
-# Honta 视觉动态库项目上下文恢复摘要
+﻿# Honta 视觉动态库项目上下文恢复摘要
 
 更新时间：2026-05-19  
 工作目录：`D:\WorkProject\honta`
@@ -34,9 +34,9 @@
 
 重要结论：
 
-- Android App 或上层模块负责 RTSP 接入、FFmpeg 解码、显示、推流、用户交互。
+- 正式 Android 版本由 C++ native 动态库负责 RTSP 接入、FFmpeg 解码、圈注和 RTSP 输出；Android App 负责配置、控制、显示、用户交互和业务流程。
 - C++ 算法模块负责处理解码后的帧，输出识别结果。
-- 如果后续确实要让 C++ 动态库内部直接处理 RTSP 输入/输出和 FFmpeg，需要单独设计 native pipeline；目前不应把 PC demo 的窗口逻辑当成最终架构。
+- native RTSP/FFmpeg pipeline 作为下一阶段单独设计；当前 PC demo 的窗口逻辑不进入最终架构。
 
 建议接口方向：
 
@@ -52,6 +52,16 @@ int honta_detect_frame(
     int result_json_size
 );
 ```
+
+## 11. 2026-05-19 收束后决策
+
+- 当前工作分支：`codex/converge-vision-module`。
+- 项目结构已按轻量工程化整理：原始资料放入 `references/`，参考图片放入 `assets/reference/`。
+- PC 阶段只维护 `detect_stream_demo`，用于 USB 摄像头和 RTSP 实时调试。
+- 中心喇叭口识别固定走外圆 rim 边缘路径，默认关闭全局直方图均衡和 CLAHE。
+- 旧的单帧/首帧调试入口和中心喇叭口实验分支已从当前主路径移除。
+- 正式 Android 方向为 native RTSP 输入/输出与 FFmpeg 解码/编码/推流。
+- 本轮不实现完整 native FFmpeg 管线；下一阶段先设计 `honta_api.h`、native pipeline 生命周期接口和 Android NDK `arm64-v8a` 构建。
 
 调试图按需输出，不建议每帧默认输出：
 
@@ -94,9 +104,6 @@ int honta_get_debug_image(
 
 ### 2.4 已试验但不建议默认启用的能力
 
-- `enable_ring_validation` 圆环边缘验证曾尝试用于过滤空白墙误识别，但实测过严，会导致真实喇叭口也识别不到。
-- 圆环验证暂时保留为实验字段，但默认应关闭。
-- `center_mode=dark/auto` 是早期为白色 3D 打印样件暗孔准备的思路，不符合最终真实黑色金属管口目标，后续建议收束掉。
 - `generic` 通用圆和 `entrance` 入口识别仍可用于调试/业务扩展，但当前调试重点是 `center` 中心喇叭口。
 
 ## 3. 当前技术栈与构建方式
@@ -143,10 +150,8 @@ $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 当前构建目标：
 
 - `honta_vision` 静态库
-- `detect_demo` 单帧/首帧测试工具
 - `detect_stream_demo` 实时流测试工具
 
-注意：用户已提出要收束项目，后续建议移除或弱化 `detect_demo`，重点保留实时工具和最终动态库接口。
 
 ### 4.2 RTSP/视频读取模块
 
@@ -205,23 +210,16 @@ struct CircleDetectorConfig {
     int clahe_tile_grid_size = 8;
     bool enable_contour_fallback = true;
     int max_results = 20;
-    int dark_threshold = 0;
     double min_circularity = 0.65;
     double min_fill_ratio = 0.55;
-    CenterHornMode center_horn_mode = CenterHornMode::Rim;
     double max_radius_image_ratio = 0.22;
     double min_rim_edge_support = 0.24;
-    bool enable_ring_validation = true;
-    double min_ring_contrast = 8.0;
-    double min_ring_edge_strength = 18.0;
-    double min_ring_gradient_alignment = 0.35;
     cv::Rect roi{};
     bool require_circle_inside_roi = false;
     bool draw_roi = true;
 };
 ```
 
-注意：虽然代码里默认值仍有实验字段，但当前项目决策是默认关闭直方图均衡、CLAHE 和圆环验证。
 
 ### 4.4 实时调试工具
 
@@ -261,7 +259,6 @@ struct CircleDetectorConfig {
 
 文件：
 
-- `tools/detect_demo.cpp`
 
 当前能力：
 
@@ -272,7 +269,6 @@ struct CircleDetectorConfig {
 后续方向：
 
 - 用户已提出算法收束，输入只留 USB 和 RTSP，最终面向 Android 动态库。
-- 建议后续删除或归档 `detect_demo`，避免继续维护图片/本地视频测试路径。
 
 ### 4.6 文档
 
@@ -291,7 +287,6 @@ struct CircleDetectorConfig {
 - JSON 字段说明
 - 空白墙误识别分析
 - ROI 调整方法
-- 圆环验证说明
 - 预处理调试图说明
 
 该文档后续需要根据最新“输入/输出 RTSP、FFmpeg 解码、Android 动态库边界”重新收束。
@@ -331,28 +326,24 @@ struct CircleDetectorConfig {
 ### 6.1 架构收束待办
 
 - 明确 Android 端最终模块边界：
-  - App 是否负责全部 RTSP 输入/输出和 FFmpeg 解码。
-  - C++ 动态库是否只接收解码后的帧。
-  - 是否仍要求 C++ native 内部管理 FFmpeg 解码。
+  - C++ native 动态库负责 RTSP 输入/输出和 FFmpeg 解码。
+  - 帧级接口保留为算法内部边界和调试能力。
+  - 下一阶段设计 C++ native FFmpeg 解码、编码和推流管线。
 - 如果确定“输入输出都用 RTSP 流，解码用 FFmpeg”在 native 层实现，需要设计 FFmpeg pipeline：
   - RTSP 输入解码
   - 帧队列
   - 算法处理
   - 圈注叠加
   - RTSP 输出编码/推流
-- 如果由 Android App 管理 RTSP 输入输出，则 C++ 动态库只需帧级接口和结果输出接口。
+- Android App 不承担正式 RTSP 解码/推流主链路，只负责配置、状态展示和业务交互。
 
 ### 6.2 算法收束待办
 
 - 默认关闭：
   - `enable_hist_equalization`
   - `enable_clahe`
-  - `enable_ring_validation`
 - 考虑移除或归档以下实验分支：
-  - `center_mode=dark`
-  - `center_mode=auto`
   - 暗色区域检测
-  - 圆环验证硬过滤
 - 将中心喇叭口识别收束为 `rim` 外圆边缘模式。
 - 保留预处理调试图能力，便于现场排查。
 - 基于真实补光后的样本重新调整默认参数。
@@ -411,14 +402,12 @@ struct CircleDetectorConfig {
 - `CMakeLists.txt`
   - 定义 C++17 项目。
   - 查找 OpenCV。
-  - 构建 `honta_vision`、`detect_demo`、`detect_stream_demo`。
   - 为 `detect_stream_demo` 增加 `third_party` include，用于 `nlohmann/json`。
 
 ### 7.2 头文件
 
 - `include/honta/vision/circle_detector.h`
   - 定义 `DetectionTarget`。
-  - 定义 `CenterHornMode`。
   - 定义 `CircleDetectorConfig`。
   - 定义 `CircleDetection`。
   - 新增 `PreprocessDebugImages`。
@@ -438,7 +427,6 @@ struct CircleDetectorConfig {
   - 实现暗色区域检测实验分支。
   - 实现 ROI 过滤。
   - 实现圆周边缘支撑过滤。
-  - 实现圆环验证实验分支。
   - 实现调试图生成。
 
 - `src/vision/rtsp_reader.cpp`
@@ -456,7 +444,6 @@ struct CircleDetectorConfig {
   - 支持窗口状态叠加显示。
   - 支持按 `s` 保存标注图和预处理阶段图。
 
-- `tools/detect_demo.cpp`
   - 单帧/首帧测试工具。
   - 后续建议移除或归档。
 
@@ -565,16 +552,14 @@ Android App 控制启动、停止、配置和显示状态
 
 下次继续开发时，建议按以下顺序：
 
-1. 先确认最终架构：RTSP 输入输出和 FFmpeg 解码是在 Android App 层做，还是 C++ native 动态库内部做。
+1. 最终架构已确认：RTSP 输入输出和 FFmpeg 解码/编码/推流由 C++ native 动态库内部负责。
 2. 收束算法默认路径：
    - 中心喇叭口使用 `rim`
    - 关闭全局均衡
    - 关闭 CLAHE
-   - 关闭圆环验证
-3. 整理或移除 `detect_demo` 单帧工具。
 4. 设计 `honta_api.h` 动态库 C ABI。
 5. 明确 App overlay 画圈协议，即 C++ 输出 JSON 字段格式。
-6. 如果仍需要 RTSP 输出，单独设计 App 层或 native 层推流方案。
+6. 下一阶段单独设计 native RTSP 输出推流方案。
 7. 使用真实补光样本重新标定默认参数。
 
 下次对话可直接说：
@@ -604,3 +589,4 @@ output_*.jpg
 render_tmp/
 *.obj
 ```
+

@@ -13,12 +13,6 @@ enum class DetectionTarget {
     GenericCircle
 };
 
-enum class CenterHornMode {
-    Rim,
-    Dark,
-    Auto
-};
-
 struct CircleDetectorConfig {
     int min_radius_px = 12;
     int max_radius_px = 320;
@@ -28,22 +22,14 @@ struct CircleDetectorConfig {
     double canny_high_threshold = 120.0;
     double hough_accumulator_threshold = 28.0;
     int gaussian_kernel_size = 7;
-    bool enable_hist_equalization = true;
+    bool enable_hist_equalization = false;
     bool enable_clahe = false;
     double clahe_clip_limit = 2.0;
     int clahe_tile_grid_size = 8;
     bool enable_contour_fallback = true;
     int max_results = 20;
-    int dark_threshold = 0;
-    double min_circularity = 0.65;
-    double min_fill_ratio = 0.55;
-    CenterHornMode center_horn_mode = CenterHornMode::Rim;
     double max_radius_image_ratio = 0.22;
     double min_rim_edge_support = 0.24;
-    bool enable_ring_validation = true;
-    double min_ring_contrast = 8.0;
-    double min_ring_edge_strength = 18.0;
-    double min_ring_gradient_alignment = 0.35;
     cv::Rect roi{};
     bool require_circle_inside_roi = false;
     bool draw_roi = true;
@@ -79,13 +65,11 @@ private:
     cv::Mat preprocess(const cv::Mat& frame) const;
     std::vector<CircleDetection> detectByHough(const cv::Mat& gray, DetectionTarget target) const;
     std::vector<CircleDetection> detectByContours(const cv::Mat& gray, DetectionTarget target) const;
-    std::vector<CircleDetection> detectDarkCircularRegions(const cv::Mat& gray, DetectionTarget target) const;
     void filterByRoi(std::vector<CircleDetection>& detections) const;
     std::vector<CircleDetection> mergeAndRank(std::vector<CircleDetection> detections) const;
 };
 
 std::string toString(DetectionTarget target);
 DetectionTarget detectionTargetFromString(const std::string& value);
-CenterHornMode centerHornModeFromString(const std::string& value);
 
 }  // namespace honta::vision

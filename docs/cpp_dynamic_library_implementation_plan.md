@@ -1,4 +1,4 @@
-# C++ 动态库实现计划
+﻿# C++ 动态库实现计划
 
 ## 1. 目标
 
@@ -50,9 +50,6 @@ C++ 动态库负责视觉识别和坐标计算，并最终以 Android 可调用�
 建议先做命令行 demo：
 
 ```bash
-detect_demo.exe --input data/entrance.jpg --type entrance
-detect_demo.exe --input data/center.jpg --type center
-detect_demo.exe --input data/entrance.mp4 --type entrance
 ```
 
 输出内容：
@@ -202,7 +199,7 @@ void honta_release();
 - `honta_calculate_all_horns`：计算并返回全部喇叭口 AMR 坐标。
 - `honta_release`：释放资源。
 
-前期建议 APP 解码视频帧后传给动态库。这样动态库只处理图像和算法，RTSP 播放、断线重连、画面展示由 APP 处理。若后续需要 C++ 直接接 RTSP，可单独扩展接口，不影响核心算法。
+当前收束后的正式方向是 C++ native 层直接接入 RTSP，使用 FFmpeg 解码，并在后续阶段补齐 RTSP 输出管线。本轮只保留帧级算法和 PC 调试工具，不实现完整 native 管线。
 
 ### 2.4 阶段四：动态库本地测试
 
@@ -501,4 +498,5 @@ C++ 侧建议交付：
 
 ## 9. 当前建议
 
-第一版不要直接做复杂 RTSP 和完整 JNI。先用本地图片、视频和 JSON 配置把算法和坐标计算跑通，再封装动态库。这样即使 APP 还不能联调，也可以持续验证识别效果和坐标结果，后续 APP 只需要把用户输入、视频帧和 AMR 位姿接到已经稳定的接口上。
+第一版收束先稳定算法、配置和 PC 实时调试入口；下一阶段再设计 `honta_api.h`、native FFmpeg RTSP 输入/输出管线和 Android NDK `arm64-v8a` 构建。
+

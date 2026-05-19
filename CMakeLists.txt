@@ -23,15 +23,6 @@ target_link_libraries(honta_vision
         ${OpenCV_LIBS}
 )
 
-add_executable(detect_demo
-    tools/detect_demo.cpp
-)
-
-target_link_libraries(detect_demo
-    PRIVATE
-        honta_vision
-)
-
 add_executable(detect_stream_demo
     tools/detect_stream_demo.cpp
 )

@@ -35,23 +35,17 @@ struct Args {
     int max_radius = 320;
     int max_results = 10;
     double min_confidence = 0.55;
-    bool enable_hist_equalization = true;
+    bool enable_hist_equalization = false;
     bool enable_clahe = false;
     double clahe_clip_limit = 2.0;
     int clahe_tile_grid_size = 8;
-    int dark_threshold = 0;
     double canny_threshold = 120.0;
     double hough_threshold = 28.0;
     bool min_radius_set = false;
     bool max_results_set = false;
-    std::string center_mode = "rim";
     double max_radius_ratio = 0.22;
     bool latest_frame_mode = true;
     double min_rim_edge_support = 0.24;
-    bool enable_ring_validation = true;
-    double min_ring_contrast = 8.0;
-    double min_ring_edge_strength = 18.0;
-    double min_ring_gradient_alignment = 0.35;
     cv::Rect roi{};
     double process_scale = 0.5;
     int detect_every = 1;
@@ -68,8 +62,7 @@ void printUsage() {
         << "                     (--input <rtsp_url|video> | --camera <index>)\n"
         << "                     [--type entrance|center|generic]\n"
         << "                     [--min-radius px] [--max-radius px] [--min-confidence value]\n"
-        << "                     [--max-results n] [--dark-threshold value]\n"
-        << "                     [--center-mode rim|dark|auto] [--max-radius-ratio value]\n"
+        << "                     [--max-results n] [--max-radius-ratio value]\n"
         << "                     [--min-rim-edge-support value] [--canny-threshold value]\n"
         << "                     [--hough-threshold value] [--roi x,y,w,h] [--no-latest-frame]\n"
         << "                     [--process-scale value] [--detect-every n] [--display-width px]\n"
@@ -164,7 +157,6 @@ bool loadConfig(const std::string& path, Args& args) {
                 return false;
             }
             setIfPresent(detection, "type", args.target);
-            setIfPresent(detection, "center_mode", args.center_mode);
             setIfPresent(detection, "min_radius_px", args.min_radius);
             setIfPresent(detection, "max_radius_px", args.max_radius);
             setIfPresent(detection, "min_confidence", args.min_confidence);
@@ -172,15 +164,10 @@ bool loadConfig(const std::string& path, Args& args) {
             setIfPresent(detection, "enable_clahe", args.enable_clahe);
             setIfPresent(detection, "clahe_clip_limit", args.clahe_clip_limit);
             setIfPresent(detection, "clahe_tile_grid_size", args.clahe_tile_grid_size);
-            setIfPresent(detection, "dark_threshold", args.dark_threshold);
             setIfPresent(detection, "canny_high_threshold", args.canny_threshold);
             setIfPresent(detection, "hough_accumulator_threshold", args.hough_threshold);
             setIfPresent(detection, "max_radius_image_ratio", args.max_radius_ratio);
             setIfPresent(detection, "min_rim_edge_support", args.min_rim_edge_support);
-            setIfPresent(detection, "enable_ring_validation", args.enable_ring_validation);
-            setIfPresent(detection, "min_ring_contrast", args.min_ring_contrast);
-            setIfPresent(detection, "min_ring_edge_strength", args.min_ring_edge_strength);
-            setIfPresent(detection, "min_ring_gradient_alignment", args.min_ring_gradient_alignment);
             setIfPresent(detection, "require_circle_inside_roi", args.require_circle_inside_roi);
             setIfPresent(detection, "draw_roi", args.draw_roi);
             if (detection.contains("max_results")) {
@@ -258,14 +245,10 @@ bool parseArgs(int argc, char** argv, Args& args) {
         } else if (key == "--max-results" && i + 1 < argc) {
             args.max_results = std::stoi(argv[++i]);
             args.max_results_set = true;
-        } else if (key == "--dark-threshold" && i + 1 < argc) {
-            args.dark_threshold = std::stoi(argv[++i]);
         } else if (key == "--canny-threshold" && i + 1 < argc) {
             args.canny_threshold = std::stod(argv[++i]);
         } else if (key == "--hough-threshold" && i + 1 < argc) {
             args.hough_threshold = std::stod(argv[++i]);
-        } else if (key == "--center-mode" && i + 1 < argc) {
-            args.center_mode = argv[++i];
         } else if (key == "--max-radius-ratio" && i + 1 < argc) {
             args.max_radius_ratio = std::stod(argv[++i]);
         } else if (key == "--min-rim-edge-support" && i + 1 < argc) {
@@ -410,16 +393,10 @@ int main(int argc, char** argv) {
     detector_config.clahe_clip_limit = args.clahe_clip_limit;
     detector_config.clahe_tile_grid_size = args.clahe_tile_grid_size;
     detector_config.max_results = args.max_results;
-    detector_config.dark_threshold = args.dark_threshold;
     detector_config.canny_high_threshold = args.canny_threshold;
     detector_config.hough_accumulator_threshold = args.hough_threshold;
-    detector_config.center_horn_mode = honta::vision::centerHornModeFromString(args.center_mode);
     detector_config.max_radius_image_ratio = args.max_radius_ratio;
     detector_config.min_rim_edge_support = args.min_rim_edge_support;
-    detector_config.enable_ring_validation = args.enable_ring_validation;
-    detector_config.min_ring_contrast = args.min_ring_contrast;
-    detector_config.min_ring_edge_strength = args.min_ring_edge_strength;
-    detector_config.min_ring_gradient_alignment = args.min_ring_gradient_alignment;
     detector_config.roi = scaleRoi(args.roi, args.process_scale);
     detector_config.require_circle_inside_roi = args.require_circle_inside_roi;
     detector_config.draw_roi = args.draw_roi;

@@ -33,12 +33,6 @@ cv::Scalar colorForTarget(DetectionTarget target) {
     }
 }
 
-struct RingValidationStats {
-    double contrast = 0.0;
-    double edge_strength = 0.0;
-    double gradient_alignment = 0.0;
-};
-
 bool hasEdgeNear(const cv::Mat& edges, int x, int y, int radius) {
     for (int yy = std::max(0, y - radius); yy <= std::min(edges.rows - 1, y + radius); ++yy) {
         for (int xx = std::max(0, x - radius); xx <= std::min(edges.cols - 1, x + radius); ++xx) {
@@ -75,62 +69,6 @@ double rimEdgeSupport(const cv::Mat& edges, const cv::Point2f& center, float rad
     return valid > 0 ? static_cast<double>(supported) / static_cast<double>(valid) : 0.0;
 }
 
-RingValidationStats validateRingEdge(const cv::Mat& gray,
-                                     const cv::Mat& grad_x,
-                                     const cv::Mat& grad_y,
-                                     const cv::Point2f& center,
-                                     float radius) {
-    RingValidationStats stats;
-    if (gray.empty() || grad_x.empty() || grad_y.empty() || radius <= 2.0F) {
-        return stats;
-    }
-
-    const int samples = 180;
-    const float offset = std::max(2.0F, radius * 0.08F);
-    double contrast_sum = 0.0;
-    double edge_sum = 0.0;
-    double alignment_sum = 0.0;
-    int valid = 0;
-
-    for (int i = 0; i < samples; ++i) {
-        const double angle = 2.0 * CV_PI * static_cast<double>(i) / static_cast<double>(samples);
-        const double radial_x = std::cos(angle);
-        const double radial_y = std::sin(angle);
-
-        const int ring_x = static_cast<int>(std::round(center.x + radius * radial_x));
-        const int ring_y = static_cast<int>(std::round(center.y + radius * radial_y));
-        const int inner_x = static_cast<int>(std::round(center.x + (radius - offset) * radial_x));
-        const int inner_y = static_cast<int>(std::round(center.y + (radius - offset) * radial_y));
-        const int outer_x = static_cast<int>(std::round(center.x + (radius + offset) * radial_x));
-        const int outer_y = static_cast<int>(std::round(center.y + (radius + offset) * radial_y));
-
-        if (ring_x < 0 || ring_y < 0 || ring_x >= gray.cols || ring_y >= gray.rows ||
-            inner_x < 0 || inner_y < 0 || inner_x >= gray.cols || inner_y >= gray.rows ||
-            outer_x < 0 || outer_y < 0 || outer_x >= gray.cols || outer_y >= gray.rows) {
-            continue;
-        }
-
-        const double inner_value = gray.at<unsigned char>(inner_y, inner_x);
-        const double outer_value = gray.at<unsigned char>(outer_y, outer_x);
-        const double gx = grad_x.at<float>(ring_y, ring_x);
-        const double gy = grad_y.at<float>(ring_y, ring_x);
-        const double strength = std::sqrt(gx * gx + gy * gy);
-        const double alignment = strength > 1e-6 ? std::abs((gx * radial_x + gy * radial_y) / strength) : 0.0;
-
-        contrast_sum += std::abs(outer_value - inner_value);
-        edge_sum += strength;
-        alignment_sum += alignment;
-        ++valid;
-    }
-
-    if (valid > 0) {
-        stats.contrast = contrast_sum / static_cast<double>(valid);
-        stats.edge_strength = edge_sum / static_cast<double>(valid);
-        stats.gradient_alignment = alignment_sum / static_cast<double>(valid);
-    }
-    return stats;
-}
-
 }  // namespace
 
 CircleDetector::CircleDetector(CircleDetectorConfig config) : config_(config) {
@@ -157,17 +95,6 @@ std::vector<CircleDetection> CircleDetector::detect(const cv::Mat& frame, Detect
     }
 
     cv::Mat gray = preprocess(frame);
-
-    if (target == DetectionTarget::CenterHorn && config_.center_horn_mode != CenterHornMode::Rim) {
-        std::vector<CircleDetection> dark_detections = detectDarkCircularRegions(gray, target);
-        filterByRoi(dark_detections);
-        if (!dark_detections.empty()) {
-            return mergeAndRank(std::move(dark_detections));
-        }
-        if (config_.center_horn_mode == CenterHornMode::Dark) {
-            return {};
-        }
-    }
 
     std::vector<CircleDetection> detections = detectByHough(gray, target);
 
@@ -273,12 +200,6 @@ PreprocessDebugImages CircleDetector::buildPreprocessDebugImages(const cv::Mat& 
 std::vector<CircleDetection> CircleDetector::detectByHough(const cv::Mat& gray, DetectionTarget target) const {
     cv::Mat edges;
     cv::Canny(gray, edges, config_.canny_high_threshold * 0.5, config_.canny_high_threshold);
-    cv::Mat grad_x;
-    cv::Mat grad_y;
-    if (target == DetectionTarget::CenterHorn && config_.enable_ring_validation) {
-        cv::Sobel(gray, grad_x, CV_32F, 1, 0, 3);
-        cv::Sobel(gray, grad_y, CV_32F, 0, 1, 3);
-    }
 
     std::vector<cv::Vec3f> circles;
     cv::HoughCircles(gray,
@@ -306,24 +227,9 @@ std::vector<CircleDetection> CircleDetector::detectByHough(const cv::Mat& gray, 
         if (target == DetectionTarget::CenterHorn && support < config_.min_rim_edge_support) {
             continue;
         }
-        RingValidationStats ring_stats;
-        if (target == DetectionTarget::CenterHorn && config_.enable_ring_validation) {
-            ring_stats = validateRingEdge(gray, grad_x, grad_y, {circle[0], circle[1]}, radius);
-            if (ring_stats.contrast < config_.min_ring_contrast ||
-                ring_stats.edge_strength < config_.min_ring_edge_strength ||
-                ring_stats.gradient_alignment < config_.min_ring_gradient_alignment) {
-                continue;
-            }
-        }
-        const double contrast_score = clamp01(ring_stats.contrast / 40.0);
-        const double edge_score = clamp01(ring_stats.edge_strength / 80.0);
         double confidence = clamp01(0.55 + 0.35 * radius_score);
         if (target == DetectionTarget::CenterHorn) {
-            confidence = config_.enable_ring_validation
-                             ? clamp01(0.10 + 0.10 * radius_score + 0.30 * support +
-                                       0.20 * contrast_score + 0.20 * edge_score +
-                                       0.20 * ring_stats.gradient_alignment)
-                             : clamp01(0.20 + 0.35 * radius_score + 0.60 * support);
+            confidence = clamp01(0.20 + 0.35 * radius_score + 0.60 * support);
         }
         if (confidence < config_.min_confidence) {
             continue;
@@ -343,12 +249,6 @@ std::vector<CircleDetection> CircleDetector::detectByHough(const cv::Mat& gray, 
 std::vector<CircleDetection> CircleDetector::detectByContours(const cv::Mat& gray, DetectionTarget target) const {
     cv::Mat edges;
     cv::Canny(gray, edges, config_.canny_high_threshold * 0.5, config_.canny_high_threshold);
-    cv::Mat grad_x;
-    cv::Mat grad_y;
-    if (target == DetectionTarget::CenterHorn && config_.enable_ring_validation) {
-        cv::Sobel(gray, grad_x, CV_32F, 1, 0, 3);
-        cv::Sobel(gray, grad_y, CV_32F, 0, 1, 3);
-    }
 
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(edges, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -379,24 +279,9 @@ std::vector<CircleDetection> CircleDetector::detectByContours(const cv::Mat& gra
         if (target == DetectionTarget::CenterHorn && support < config_.min_rim_edge_support) {
             continue;
         }
-        RingValidationStats ring_stats;
-        if (target == DetectionTarget::CenterHorn && config_.enable_ring_validation) {
-            ring_stats = validateRingEdge(gray, grad_x, grad_y, center, radius);
-            if (ring_stats.contrast < config_.min_ring_contrast ||
-                ring_stats.edge_strength < config_.min_ring_edge_strength ||
-                ring_stats.gradient_alignment < config_.min_ring_gradient_alignment) {
-                continue;
-            }
-        }
-        const double contrast_score = clamp01(ring_stats.contrast / 40.0);
-        const double edge_score = clamp01(ring_stats.edge_strength / 80.0);
         double confidence = clamp01(0.55 * circularity + 0.45 * std::min(fill_ratio, 1.0));
         if (target == DetectionTarget::CenterHorn) {
-            confidence = config_.enable_ring_validation
-                             ? clamp01(0.15 * circularity + 0.10 * std::min(fill_ratio, 1.0) +
-                                       0.25 * support + 0.20 * contrast_score +
-                                       0.20 * edge_score + 0.20 * ring_stats.gradient_alignment)
-                             : clamp01(0.45 * circularity + 0.25 * std::min(fill_ratio, 1.0) + 0.35 * support);
+            confidence = clamp01(0.45 * circularity + 0.25 * std::min(fill_ratio, 1.0) + 0.35 * support);
         }
         if (confidence < config_.min_confidence) {
             continue;
@@ -406,69 +291,6 @@ std::vector<CircleDetection> CircleDetector::detectByContours(const cv::Mat& gra
         detection.center = center;
         detection.radius = radius;
         detection.confidence = confidence;
-        detection.target = target;
-        detections.push_back(detection);
-    }
-
-    return detections;
-}
-
-std::vector<CircleDetection> CircleDetector::detectDarkCircularRegions(const cv::Mat& gray, DetectionTarget target) const {
-    cv::Mat mask;
-    if (config_.dark_threshold > 0) {
-        cv::threshold(gray, mask, config_.dark_threshold, 255, cv::THRESH_BINARY_INV);
-    } else {
-        cv::threshold(gray, mask, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    }
-
-    const int kernel_size = std::max(5, (config_.min_radius_px / 6) * 2 + 1);
-    const cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, {kernel_size, kernel_size});
-    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
-    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
-
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-    std::vector<CircleDetection> detections;
-    const cv::Rect image_rect(0, 0, gray.cols, gray.rows);
-    for (const std::vector<cv::Point>& contour : contours) {
-        const cv::Rect bounds = cv::boundingRect(contour);
-        if (bounds.x <= 1 || bounds.y <= 1 || bounds.br().x >= image_rect.width - 1 ||
-            bounds.br().y >= image_rect.height - 1) {
-            continue;
-        }
-
-        const double area = cv::contourArea(contour);
-        if (area <= 0.0) {
-            continue;
-        }
-
-        cv::Point2f center;
-        float radius = 0.0F;
-        cv::minEnclosingCircle(contour, center, radius);
-        const double max_radius_by_image = std::min(gray.cols, gray.rows) * config_.max_radius_image_ratio;
-        if (radius > max_radius_by_image) {
-            continue;
-        }
-        if (radius < config_.min_radius_px || radius > config_.max_radius_px) {
-            continue;
-        }
-
-        const double perimeter = cv::arcLength(contour, true);
-        const double circularity = perimeter > 0.0 ? 4.0 * CV_PI * area / (perimeter * perimeter) : 0.0;
-        const double circle_area = CV_PI * static_cast<double>(radius) * static_cast<double>(radius);
-        const double fill_ratio = area / std::max(circle_area, 1.0);
-        const double aspect = static_cast<double>(std::min(bounds.width, bounds.height)) /
-                              std::max(1.0, static_cast<double>(std::max(bounds.width, bounds.height)));
-
-        if (circularity < config_.min_circularity || fill_ratio < config_.min_fill_ratio || aspect < 0.55) {
-            continue;
-        }
-
-        CircleDetection detection;
-        detection.center = center;
-        detection.radius = radius;
-        detection.confidence = clamp01(0.45 * circularity + 0.35 * std::min(fill_ratio, 1.0) + 0.20 * aspect);
         detection.target = target;
         detections.push_back(detection);
     }
@@ -553,16 +375,6 @@ DetectionTarget detectionTargetFromString(const std::string& value) {
         return DetectionTarget::CenterHorn;
     }
     return DetectionTarget::GenericCircle;
-}
-
-CenterHornMode centerHornModeFromString(const std::string& value) {
-    if (value == "dark") {
-        return CenterHornMode::Dark;
-    }
-    if (value == "auto") {
-        return CenterHornMode::Auto;
-    }
-    return CenterHornMode::Rim;
 }
 
 }  // namespace honta::vision

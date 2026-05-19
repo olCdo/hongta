@@ -1,104 +1,83 @@
 # 视觉模块使用说明
 
-## 1. 当前内容
+## 当前模块
 
-当前已实现两个基础模块：
+- `CircleDetector`：入口通孔、中心喇叭口和通用圆形目标检测。
+- `RtspReader`：PC 调试用 RTSP/视频读取封装，基于 OpenCV `VideoCapture`。
+- `LatestFrameReader`：PC 调试用后台读取器，只保留最新帧，降低 RTSP 显示延迟。
+- `detect_stream_demo`：当前唯一维护的 PC 实时调试工具，支持 USB 摄像头和 RTSP 输入。
 
-- `RtspReader`：基于 OpenCV `VideoCapture` 的 RTSP、本地视频读取模块。
-- `CircleDetector`：入口通孔、中心喇叭口的圆形识别模块。
+正式 Android 方向是 native RTSP 输入/输出和 FFmpeg 解码/编码管线；本模块当前阶段先保留帧级算法和 PC 调试能力，不在 `detect_stream_demo` 中实现最终 Android 管线。
 
-同时提供一个命令行工具：
-
-- `detect_demo`：读取图片、本地视频或 RTSP 第一帧，执行圆形识别，并输出识别 JSON 和圈注图片。
-
-## 2. 目录结构
+## 目录结构
 
 ```text
 CMakeLists.txt
+configs/
+  center_horn_usb_debug.json
 include/
-  honta/
-    vision/
-      circle_detector.h
-      rtsp_reader.h
+  honta/vision/
+    circle_detector.h
+    rtsp_reader.h
 src/
   vision/
     circle_detector.cpp
     rtsp_reader.cpp
 tools/
-  detect_demo.cpp
+  detect_stream_demo.cpp
+references/
+assets/reference/
+third_party/
 ```
 
-## 3. 编译依赖
+## 构建
 
-需要：
-
-- CMake 3.16+
-- C++17 编译器
-- OpenCV，至少包含：
-  - `core`
-  - `imgproc`
-  - `imgcodecs`
-  - `videoio`
-  - `highgui`
-
-Windows 示例：
-
-```bash
-cmake -S . -B build -DOpenCV_DIR=<opencv_build_dir>
-cmake --build build --config Release
+```powershell
+cmd.exe /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 && "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -S D:\WorkProject\honta -B D:\WorkProject\honta\build_nmake -G "NMake Makefiles" -DOpenCV_DIR=D:\opencv\build\x64\vc16\lib && "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build D:\WorkProject\honta\build_nmake'
 ```
 
-Linux 示例：
+构建目标：
 
-```bash
-cmake -S . -B build
-cmake --build build -j
+- `honta_vision`
+- `detect_stream_demo`
+
+## 实时调试
+
+USB 摄像头：
+
+```powershell
+$env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
+.\build_nmake\detect_stream_demo.exe --config configs\center_horn_usb_debug.json
 ```
 
-## 4. detect_demo 用法
+RTSP 输入：
 
-识别入口通孔图片：
-
-```bash
-detect_demo --input data/entrance.jpg --type entrance --output output_entrance.jpg
+```powershell
+$env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
+.\build_nmake\detect_stream_demo.exe `
+  --config configs\center_horn_usb_debug.json `
+  --input "rtsp://user:password@192.168.1.10:554/stream1"
 ```
 
-识别中心喇叭口图片：
+按键：
 
-```bash
-detect_demo --input data/center.jpg --type center --output output_center.jpg
-```
+- `q` 或 `ESC`：退出。
+- `s`：保存当前圈注图；配置 `save_debug_stages=true` 时同时保存灰度、模糊、预处理和边缘图。
 
-读取 RTSP 第一帧并识别：
+## 当前识别策略
 
-```bash
-detect_demo --input rtsp://user:password@192.168.1.10:554/stream1 --type entrance --output output_rtsp.jpg
-```
+中心喇叭口固定使用外圆边缘识别路径：
 
-输出 JSON 示例：
+- 默认关闭全局直方图均衡。
+- 默认关闭 CLAHE。
+- 通过 `min_rim_edge_support`、ROI、半径范围和 Hough 阈值控制误识别。
+- 已移除早期中心目标实验分支。
 
-```json
-{
-  "success": true,
-  "detections": [
-    {
-      "id": 1,
-      "center_x": 512.3,
-      "center_y": 384.6,
-      "radius": 42.8,
-      "confidence": 0.92,
-      "type": "entrance_hole"
-    }
-  ]
-}
-```
+## 后续工作
 
-## 5. 后续工作
+下一阶段重点：
 
-下一步建议：
-
-1. 准备真实入口通孔、中心喇叭口图片。
-2. 根据图片效果调整 `CircleDetectorConfig` 参数。
-3. 增加连续视频识别 demo。
-4. 增加结果 JSON 文件输出。
-5. 开始实现相机参数、顶盖数据和坐标计算模块。
+1. 设计 `honta_api.h` C ABI。
+2. 设计 native FFmpeg RTSP 输入/输出管线。
+3. 增加 Android NDK `arm64-v8a` 构建。
+4. 基于真实补光样本重新标定默认参数。
