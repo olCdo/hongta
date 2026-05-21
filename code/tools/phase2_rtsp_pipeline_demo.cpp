@@ -71,6 +71,18 @@ bool loadConfig(const std::string& path, honta::vision::DetectionServiceConfig& 
         setIfPresent(rtsp, "output_bitrate", config.overlay.bitrate);
     }
 
+    if (root.contains("debug_rtsp")) {
+        const auto& debug_rtsp = root.at("debug_rtsp");
+        setIfPresent(debug_rtsp, "enabled", config.debug_output_enabled);
+        setIfPresent(debug_rtsp, "bind_ip", config.debug_overlay.bind_ip);
+        setIfPresent(debug_rtsp, "public_host", config.debug_overlay.public_host);
+        setIfPresent(debug_rtsp, "port", config.debug_overlay.port);
+        setIfPresent(debug_rtsp, "path", config.debug_overlay.path);
+        setIfPresent(debug_rtsp, "fps", config.debug_overlay.fps);
+        setIfPresent(debug_rtsp, "bitrate", config.debug_overlay.bitrate);
+        setIfPresent(debug_rtsp, "rtsp_transport", config.debug_overlay.rtsp_transport);
+    }
+
     if (root.contains("runtime")) {
         const auto& runtime = root.at("runtime");
         setIfPresent(runtime, "reconnect_interval_ms", config.reconnect_interval_ms);
@@ -100,6 +112,27 @@ bool loadConfig(const std::string& path, honta::vision::DetectionServiceConfig& 
 void printUsage() {
     std::cerr << "Usage: phase2_rtsp_pipeline_demo --config <config.json>"
               << " [--detect-type entrance_hole|center_horn] [--duration-sec n]\n";
+}
+
+void printRuntimeConfig(const honta::vision::DetectionServiceConfig& config,
+                        const std::string& detect_type) {
+    const auto profile_iter = config.profiles.find(detect_type);
+    if (profile_iter == config.profiles.end()) {
+        return;
+    }
+
+    const honta::vision::CircleDetectorConfig& detector = profile_iter->second.detector_config;
+    std::cout << "selected detect_type: " << detect_type << "\n"
+              << "profile: min_radius_px=" << detector.min_radius_px
+              << " max_radius_px=" << detector.max_radius_px
+              << " min_confidence=" << detector.min_confidence
+              << " min_rim_edge_support=" << detector.min_rim_edge_support
+              << " enable_clahe=" << (detector.enable_clahe ? "true" : "false")
+              << " max_results=" << detector.max_results << "\n"
+              << "reconnect: interval_ms=" << config.reconnect_interval_ms
+              << " max_attempts=" << config.max_reconnect_attempts << "\n"
+              << "debug_rtsp: " << (config.debug_output_enabled ? "enabled" : "disabled")
+              << " url=" << honta::vision::InternalRtspOutputService(config.debug_overlay).playbackUrl() << "\n";
 }
 
 }  // namespace
@@ -142,6 +175,7 @@ int main(int argc, char** argv) {
     }
 
     honta::vision::DetectionService service;
+    printRuntimeConfig(config, detect_type);
     service.configure(std::move(config));
 
     std::cout << "overlay RTSP URL: " << service.overlayRtspUrl() << "\n";

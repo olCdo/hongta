@@ -44,6 +44,7 @@ struct DetectionSessionSnapshot {
     std::string detect_type;
     std::string input_rtsp_url;
     std::string overlay_rtsp_url;
+    std::string debug_rtsp_url;
     DetectionSessionState state = DetectionSessionState::Idle;
     int frame_id = 0;
     std::vector<DetectionCandidate> latest_candidates;
@@ -54,7 +55,8 @@ class DetectionSession {
 public:
     void reset(const std::string& detect_type,
                const std::string& input_rtsp_url,
-               const std::string& overlay_rtsp_url);
+               const std::string& overlay_rtsp_url,
+               const std::string& debug_rtsp_url);
     void clear();
     void setState(DetectionSessionState state);
     void setLastError(const std::string& error);

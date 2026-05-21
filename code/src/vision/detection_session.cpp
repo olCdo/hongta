@@ -6,12 +6,14 @@ namespace honta::vision {
 
 void DetectionSession::reset(const std::string& detect_type,
                              const std::string& input_rtsp_url,
-                             const std::string& overlay_rtsp_url) {
+                             const std::string& overlay_rtsp_url,
+                             const std::string& debug_rtsp_url) {
     std::lock_guard<std::mutex> lock(mutex_);
     snapshot_ = {};
     snapshot_.detect_type = detect_type;
     snapshot_.input_rtsp_url = input_rtsp_url;
     snapshot_.overlay_rtsp_url = overlay_rtsp_url;
+    snapshot_.debug_rtsp_url = debug_rtsp_url;
     snapshot_.state = DetectionSessionState::Starting;
 }
 

@@ -2,6 +2,10 @@ build/
 build_nmake/
 .codex_tmp/
 render_tmp/
+output/
+vcpkg_installed/
+__pycache__/
+code/tools/__pycache__/
 
 stream_debug_*.jpg
 output_*.jpg

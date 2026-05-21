@@ -28,6 +28,32 @@ std::string normalizePath(const std::string& path) {
     return path.front() == '/' ? path : "/" + path;
 }
 
+bool supportsPixelFormat(const AVCodec* codec, AVPixelFormat pixel_format) {
+    if (codec == nullptr || codec->pix_fmts == nullptr) {
+        return true;
+    }
+    for (const AVPixelFormat* format = codec->pix_fmts; *format != AV_PIX_FMT_NONE; ++format) {
+        if (*format == pixel_format) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const AVCodec* findEncoderWithPixelFormat(AVCodecID codec_id, AVPixelFormat pixel_format) {
+    void* opaque = nullptr;
+    const AVCodec* codec = nullptr;
+    while ((codec = av_codec_iterate(&opaque)) != nullptr) {
+        if (!av_codec_is_encoder(codec) || codec->type != AVMEDIA_TYPE_VIDEO || codec->id != codec_id) {
+            continue;
+        }
+        if (supportsPixelFormat(codec, pixel_format)) {
+            return codec;
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 InternalRtspOutputService::InternalRtspOutputService(OverlayRtspConfig config)
@@ -133,11 +159,14 @@ const std::string& InternalRtspOutputService::lastError() const {
 
 bool InternalRtspOutputService::openEncoder(int width, int height) {
     const AVCodec* codec = avcodec_find_encoder_by_name("libx264");
-    if (codec == nullptr) {
-        codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+    if (!supportsPixelFormat(codec, AV_PIX_FMT_YUV420P)) {
+        codec = findEncoderWithPixelFormat(AV_CODEC_ID_H264, AV_PIX_FMT_YUV420P);
     }
     if (codec == nullptr) {
-        last_error_ = "failed to find H.264 encoder";
+        codec = findEncoderWithPixelFormat(AV_CODEC_ID_MPEG4, AV_PIX_FMT_YUV420P);
+    }
+    if (codec == nullptr) {
+        last_error_ = "failed to find a video encoder supporting yuv420p";
         return false;
     }
 

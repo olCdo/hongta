@@ -12,9 +12,19 @@
     "output_fps": 25,
     "output_bitrate": 2000000
   },
+  "debug_rtsp": {
+    "enabled": true,
+    "bind_ip": "0.0.0.0",
+    "public_host": "127.0.0.1",
+    "port": 8554,
+    "path": "/honta_debug",
+    "fps": 10,
+    "bitrate": 2500000,
+    "rtsp_transport": "tcp"
+  },
   "runtime": {
     "reconnect_interval_ms": 1000,
-    "max_reconnect_attempts": 3
+    "max_reconnect_attempts": 60
   },
   "detection_profiles": {
     "entrance_hole": {

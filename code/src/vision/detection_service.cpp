@@ -45,7 +45,10 @@ bool DetectionService::startDetect(const std::string& detect_type) {
     stopDetect();
     stop_requested_.store(false);
     last_error_.clear();
-    session_.reset(detect_type, config_.input.url, overlayRtspUrl());
+    session_.reset(detect_type,
+                   config_.input.url,
+                   overlayRtspUrl(),
+                   config_.debug_output_enabled ? debugRtspUrl() : std::string{});
     worker_ = std::thread(&DetectionService::workerLoop, this, detect_type, profile_iter->second);
     return true;
 }
@@ -61,6 +64,9 @@ void DetectionService::stopDetect() {
     }
     if (output_) {
         output_->close();
+    }
+    if (debug_output_) {
+        debug_output_->close();
     }
     if (input_) {
         input_->close();
@@ -81,6 +87,11 @@ std::optional<DetectionCandidate> DetectionService::findCandidate(
 
 std::string DetectionService::overlayRtspUrl() const {
     InternalRtspOutputService output(config_.overlay);
+    return output.playbackUrl();
+}
+
+std::string DetectionService::debugRtspUrl() const {
+    InternalRtspOutputService output(config_.debug_overlay);
     return output.playbackUrl();
 }
 
@@ -118,6 +129,9 @@ void DetectionService::workerLoop(std::string detect_type, DetectionProfile prof
                 if (output_) {
                     output_->close();
                 }
+                if (debug_output_) {
+                    debug_output_->close();
+                }
                 ++reconnect_attempts;
                 break;
             }
@@ -139,6 +153,25 @@ void DetectionService::workerLoop(std::string detect_type, DetectionProfile prof
                 setError(output_->lastError());
                 session_.setState(DetectionSessionState::Error);
                 return;
+            }
+
+            if (config_.debug_output_enabled) {
+                PreprocessDebugImages debug_images = detector.buildPreprocessDebugImages(decoded.bgr);
+                cv::Mat debug_overlay = drawDebugOverlay(decoded.bgr,
+                                                         debug_images,
+                                                         overlay,
+                                                         frame_id,
+                                                         detect_type,
+                                                         session_.snapshot().state);
+                if (!openDebugOutputIfNeeded(debug_overlay)) {
+                    session_.setState(DetectionSessionState::Error);
+                    return;
+                }
+                if (!debug_output_->write(debug_overlay)) {
+                    setError(debug_output_->lastError());
+                    session_.setState(DetectionSessionState::Error);
+                    return;
+                }
             }
         }
 
@@ -171,6 +204,18 @@ bool DetectionService::openOutputIfNeeded(const cv::Mat& frame) {
     output_ = std::make_unique<InternalRtspOutputService>(config_.overlay);
     if (!output_->open(frame.cols, frame.rows)) {
         setError(output_->lastError());
+        return false;
+    }
+    return true;
+}
+
+bool DetectionService::openDebugOutputIfNeeded(const cv::Mat& frame) {
+    if (debug_output_ && debug_output_->isOpen()) {
+        return true;
+    }
+    debug_output_ = std::make_unique<InternalRtspOutputService>(config_.debug_overlay);
+    if (!debug_output_->open(frame.cols, frame.rows)) {
+        setError(debug_output_->lastError());
         return false;
     }
     return true;
@@ -220,6 +265,58 @@ cv::Mat DetectionService::drawOverlay(const cv::Mat& frame,
     cv::putText(output, status.str(), status_origin, cv::FONT_HERSHEY_SIMPLEX, 0.65 * scale, {0, 0, 0}, thickness + 2, cv::LINE_AA);
     cv::putText(output, status.str(), status_origin, cv::FONT_HERSHEY_SIMPLEX, 0.65 * scale, {255, 255, 255}, thickness, cv::LINE_AA);
     return output;
+}
+
+cv::Mat DetectionService::drawDebugOverlay(const cv::Mat& frame,
+                                           const PreprocessDebugImages& debug_images,
+                                           const cv::Mat& overlay,
+                                           int frame_id,
+                                           const std::string& detect_type,
+                                           DetectionSessionState state) const {
+    const int cell_width = std::max(1, frame.cols / 2);
+    const int cell_height = std::max(1, frame.rows / 2);
+    cv::Mat canvas(cell_height * 2, cell_width * 2, CV_8UC3, cv::Scalar(20, 20, 20));
+
+    const auto toTile = [](const cv::Mat& source, const cv::Size& size) {
+        cv::Mat color;
+        if (source.empty()) {
+            color = cv::Mat(size, CV_8UC3, cv::Scalar(0, 0, 0));
+        } else if (source.channels() == 1) {
+            cv::cvtColor(source, color, cv::COLOR_GRAY2BGR);
+        } else {
+            color = source.clone();
+        }
+
+        cv::Mat resized;
+        cv::resize(color, resized, size, 0.0, 0.0, cv::INTER_AREA);
+        return resized;
+    };
+
+    const auto placeTile = [&](const cv::Mat& source, int col, int row, const std::string& label) {
+        const cv::Rect roi(col * cell_width, row * cell_height, cell_width, cell_height);
+        cv::Mat tile = toTile(source, roi.size());
+        tile.copyTo(canvas(roi));
+        cv::putText(canvas, label, {roi.x + 10, roi.y + 26}, cv::FONT_HERSHEY_SIMPLEX, 0.7, {0, 0, 0}, 4, cv::LINE_AA);
+        cv::putText(canvas, label, {roi.x + 10, roi.y + 26}, cv::FONT_HERSHEY_SIMPLEX, 0.7, {255, 255, 255}, 2, cv::LINE_AA);
+    };
+
+    cv::Mat edges_color;
+    if (!debug_images.edges.empty()) {
+        cv::applyColorMap(debug_images.edges, edges_color, cv::COLORMAP_JET);
+    }
+
+    placeTile(frame, 0, 0, "source");
+    placeTile(debug_images.preprocessed, 1, 0, "preprocessed");
+    placeTile(edges_color.empty() ? debug_images.edges : edges_color, 0, 1, "edges");
+    placeTile(overlay, 1, 1, "final overlay");
+
+    std::ostringstream status;
+    status << "debug type=" << detect_type
+           << " frame=" << frame_id
+           << " state=" << toString(state);
+    cv::putText(canvas, status.str(), {12, canvas.rows - 14}, cv::FONT_HERSHEY_SIMPLEX, 0.6, {0, 0, 0}, 4, cv::LINE_AA);
+    cv::putText(canvas, status.str(), {12, canvas.rows - 14}, cv::FONT_HERSHEY_SIMPLEX, 0.6, {255, 255, 255}, 2, cv::LINE_AA);
+    return canvas;
 }
 
 void DetectionService::setError(const std::string& error) {
