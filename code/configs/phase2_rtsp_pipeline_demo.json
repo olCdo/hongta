@@ -1,0 +1,37 @@
+{
+  "rtsp": {
+    "input_url": "rtsp://192.168.1.10:554/stream1",
+    "rtsp_transport": "tcp",
+    "open_timeout_ms": 5000,
+    "read_timeout_ms": 3000,
+    "low_latency": true,
+    "overlay_bind_ip": "0.0.0.0",
+    "overlay_public_host": "127.0.0.1",
+    "overlay_port": 8554,
+    "overlay_path": "/honta_overlay",
+    "output_fps": 25,
+    "output_bitrate": 2000000
+  },
+  "runtime": {
+    "reconnect_interval_ms": 1000,
+    "max_reconnect_attempts": 3
+  },
+  "detection_profiles": {
+    "entrance_hole": {
+      "min_radius_px": 40,
+      "max_radius_px": 180,
+      "min_confidence": 0.6,
+      "min_rim_edge_support": 0.45,
+      "enable_clahe": true,
+      "max_results": 20
+    },
+    "center_horn": {
+      "min_radius_px": 80,
+      "max_radius_px": 260,
+      "min_confidence": 0.55,
+      "min_rim_edge_support": 0.35,
+      "enable_clahe": false,
+      "max_results": 20
+    }
+  }
+}
