@@ -1,0 +1,26 @@
+{
+  "camera_id": "top_rgb_camera",
+  "image_width": 1920,
+  "image_height": 1080,
+  "intrinsic": {
+    "fx": 1200.0,
+    "fy": 1200.0,
+    "cx": 960.0,
+    "cy": 540.0
+  },
+  "distortion": {
+    "k1": 0.0,
+    "k2": 0.0,
+    "p1": 0.0,
+    "p2": 0.0,
+    "k3": 0.0
+  },
+  "mount": {
+    "x_mm": 0.0,
+    "y_mm": 0.0,
+    "z_mm": 1200.0,
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+  }
+}

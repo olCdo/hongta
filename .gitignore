@@ -1,5 +1,6 @@
 build/
 build_nmake/
+build_phase3/
 .codex_tmp/
 render_tmp/
 output/
