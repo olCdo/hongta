@@ -1,0 +1,46 @@
+{
+  "rtsp": {
+    "input_url": "rtsp://192.168.1.10:554/stream1",
+    "overlay_bind_ip": "0.0.0.0",
+    "overlay_public_host": "192.168.1.20",
+    "overlay_port": 8554,
+    "overlay_path": "/honta_overlay"
+  },
+  "runtime": {
+    "camera_config_path": "camera/top_rgb_camera.json",
+    "top_cover_data_dir": "top_cover"
+  },
+  "crop": {
+    "enabled": false,
+    "left": 320,
+    "top": 120,
+    "right": 320,
+    "bottom": 240
+  },
+  "detection_profiles": {
+    "entrance_hole": {
+      "min_radius_px": 40,
+      "max_radius_px": 180,
+      "min_confidence": 0.6,
+      "min_rim_edge_support": 0.45,
+      "canny_high_threshold": 120.0,
+      "hough_accumulator_threshold": 28.0,
+      "enable_clahe": true,
+      "enable_hist_equalization": false,
+      "max_radius_image_ratio": 0.22,
+      "max_results": 20
+    },
+    "center_horn": {
+      "min_radius_px": 80,
+      "max_radius_px": 260,
+      "min_confidence": 0.55,
+      "min_rim_edge_support": 0.35,
+      "canny_high_threshold": 120.0,
+      "hough_accumulator_threshold": 28.0,
+      "enable_clahe": false,
+      "enable_hist_equalization": false,
+      "max_radius_image_ratio": 0.22,
+      "max_results": 20
+    }
+  }
+}
