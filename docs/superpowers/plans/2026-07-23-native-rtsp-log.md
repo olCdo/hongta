@@ -199,7 +199,7 @@ git diff --cached --check
 git commit -m "feat: add native RTSP diagnostics / 功能：新增原生RTSP诊断日志"
 ```
 
-- [ ] **Step 5: 推送并创建草稿 PR**
+- [x] **Step 5: 推送并创建草稿 PR**
 
 ```powershell
 git push -u origin codex/android-handoff-package
