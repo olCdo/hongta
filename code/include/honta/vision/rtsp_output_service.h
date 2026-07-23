@@ -19,8 +19,8 @@ struct OverlayRtspConfig {
     std::string public_host = "127.0.0.1";
     int port = 8554;
     std::string path = "/honta_overlay";
-    int fps = 25;
-    int bitrate = 2000000;
+    int fps = 10;
+    int bitrate = 800000;
     std::string rtsp_transport = "tcp";
 };
 

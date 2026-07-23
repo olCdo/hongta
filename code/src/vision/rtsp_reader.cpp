@@ -22,8 +22,13 @@ bool RtspReader::open() {
     if (config_.low_latency) {
         // Applies to OpenCV's FFmpeg backend. UDP avoids TCP retransmission latency;
         // nobuffer/low_delay keeps the capture close to the live frame.
-        _putenv_s("OPENCV_FFMPEG_CAPTURE_OPTIONS",
-                  "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;0|stimeout;3000000");
+        constexpr const char* kFfmpegCaptureOptions =
+            "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;0|stimeout;3000000";
+#ifdef _WIN32
+        _putenv_s("OPENCV_FFMPEG_CAPTURE_OPTIONS", kFfmpegCaptureOptions);
+#else
+        setenv("OPENCV_FFMPEG_CAPTURE_OPTIONS", kFfmpegCaptureOptions, 1);
+#endif
         config_.api_preference = cv::CAP_FFMPEG;
     }
 

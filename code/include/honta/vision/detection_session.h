@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <cstdint>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -9,11 +8,9 @@
 #include <vector>
 
 #include "honta/vision/circle_detector.h"
+#include "honta/vision/detection_types.h"
 
 namespace honta::vision {
-
-constexpr const char* kDetectTypeEntranceHole = "entrance_hole";
-constexpr const char* kDetectTypeCenterHorn = "center_horn";
 
 enum class DetectionSessionState {
     Idle,
@@ -22,17 +19,6 @@ enum class DetectionSessionState {
     Reconnecting,
     Error,
     Stopping,
-};
-
-struct DetectionCandidate {
-    int candidate_id = 0;
-    std::string detect_type;
-    double center_x = 0.0;
-    double center_y = 0.0;
-    double radius = 0.0;
-    double confidence = 0.0;
-    int frame_id = 0;
-    std::int64_t timestamp_ms = 0;
 };
 
 struct DetectionProfile {
@@ -74,7 +60,6 @@ private:
     DetectionSessionSnapshot snapshot_;
 };
 
-bool isSupportedDetectType(const std::string& detect_type);
 std::string toString(DetectionSessionState state);
 
 }  // namespace honta::vision

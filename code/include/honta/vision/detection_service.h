@@ -1,11 +1,13 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
 #include <thread>
 
+#include "honta/config/runtime_config.h"
 #include "honta/vision/detection_session.h"
 #include "honta/vision/ffmpeg_rtsp_input.h"
 #include "honta/vision/rtsp_output_service.h"
@@ -24,6 +26,8 @@ struct DetectionServiceConfig {
     int reconnect_interval_ms = 1000;
     int max_reconnect_attempts = 60;
     bool debug_output_enabled = false;
+    honta::config::CropConfig crop;
+    std::function<void(const std::string&)> on_error;
 };
 
 class DetectionService {
@@ -43,7 +47,7 @@ public:
                                                     const std::string& expected_detect_type) const;
     std::string overlayRtspUrl() const;
     std::string debugRtspUrl() const;
-    const std::string& lastError() const;
+    std::string lastError() const;
 
 private:
     void workerLoop(std::string detect_type, DetectionProfile profile);
@@ -71,7 +75,6 @@ private:
     std::unique_ptr<InternalRtspOutputService> debug_output_;
     std::thread worker_;
     std::atomic_bool stop_requested_{false};
-    std::string last_error_;
 };
 
 }  // namespace honta::vision

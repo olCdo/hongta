@@ -10,6 +10,13 @@
     "camera_config_path": "camera/top_rgb_camera.json",
     "top_cover_data_dir": "top_cover"
   },
+  "crop": {
+    "enabled": false,
+    "left": 320,
+    "top": 120,
+    "right": 320,
+    "bottom": 240
+  },
   "detection_profiles": {
     "entrance_hole": {
       "min_radius_px": 40,

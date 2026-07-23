@@ -78,10 +78,6 @@ std::int64_t DetectionSession::nowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
 }
 
-bool isSupportedDetectType(const std::string& detect_type) {
-    return detect_type == kDetectTypeEntranceHole || detect_type == kDetectTypeCenterHorn;
-}
-
 std::string toString(DetectionSessionState state) {
     switch (state) {
         case DetectionSessionState::Idle:

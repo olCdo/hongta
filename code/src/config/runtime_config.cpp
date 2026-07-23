@@ -5,6 +5,13 @@
 
 namespace honta::config {
 
+void validateCropConfig(const CropConfig& config) {
+    if (config.left < 0 || config.top < 0 ||
+        config.right < 0 || config.bottom < 0) {
+        throw std::invalid_argument("crop left, top, right and bottom must be greater than or equal to 0");
+    }
+}
+
 void validateRuntimeConfig(const RuntimeConfig& config) {
     if (config.input_rtsp_url.empty()) {
         throw std::invalid_argument("input_rtsp_url is required");
@@ -27,6 +34,7 @@ void validateRuntimeConfig(const RuntimeConfig& config) {
     if (config.top_cover_data_dir.empty()) {
         throw std::invalid_argument("top_cover_data_dir is required");
     }
+    validateCropConfig(config.crop);
     if (config.detection_profiles.find("entrance_hole") == config.detection_profiles.end()) {
         throw std::invalid_argument("detection profile entrance_hole is required");
     }
