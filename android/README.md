@@ -83,6 +83,11 @@ app/src/main/assets/phase7_smoke/runtime.json
     "overlay_public_host": "<MediaMTX所在PC的局域网IP>",
     "overlay_port": 8554,
     "overlay_path": "/honta_overlay"
+  },
+  "runtime": {
+    "camera_config_path": "camera/top_rgb_camera.json",
+    "top_cover_data_dir": "top_cover",
+    "processing_scale": 0.5
   }
 }
 ```
@@ -94,7 +99,10 @@ app/src/main/assets/phase7_smoke/runtime.json
 - 局域网部署建议填写 PC 的 WLAN 或有线网卡地址。
 - App 启动时会把 assets 配置复制到应用内部目录，并把内部 `runtime.json` 绝对路径传给 `HontaNative.init()`。
 - 修改本地配置后必须重新构建和安装 APK，旧 APK 不会自动更新。
+- `processing_scale` 默认值为 `1.0`，有效范围为 `(0, 1]`；关闭裁剪时，`1280×720` 输入配置为 `0.5` 后输出 `640×360`。
 - 当前代码只使用 `rtsp` 节点；`debug_rtsp` 尚未接入 `HontaContext`。
+
+检测器的像素参数会随 `processing_scale` 同步缩放，业务坐标会恢复到原始输入坐标系。低延迟输入线程只保留最新帧；日志中的 `dropped stale frames` 表示旧帧被主动丢弃。publisher PTS 跟随单调墙钟，避免播放器出现数秒停顿后集中快放。
 
 ## 网络预检查
 
@@ -303,6 +311,14 @@ adb -s emulator-5554 shell ip -4 route
 ```
 
 如果没有默认路由，属于 AVD 网络环境问题，不是 `.so` RTSP 逻辑问题。真实设备验收应优先使用 ARM64 真机。
+
+## 2026-07-30 双 ABI 验证
+
+- 使用最终 strip 后的 `arm64-v8a` 和 `x86_64` 交付库构建独立测试 APK。
+- ARM64 真机和 x86_64 模拟器均以 `center_horn` 启动，并完成 `1280×720 → 640×360` 处理和 RTSP 发布。
+- ARM64 的 5.83 秒墙钟采样覆盖 4.8 秒 PTS；x86_64 的 5.36 秒墙钟采样覆盖 4.9 秒 PTS。
+- 两个 ABI 均出现 `input opened`、缩放尺寸日志和 `publisher online`，未发现 `DESCRIBE 404`、检测失败或 publisher 失败。
+- 测试使用独立 App ID 和临时 RTSP 路径，不改动正式 App 或现场配置。
 
 ## 集成规则
 

@@ -34,6 +34,10 @@ void validateRuntimeConfig(const RuntimeConfig& config) {
     if (config.top_cover_data_dir.empty()) {
         throw std::invalid_argument("top_cover_data_dir is required");
     }
+    if (!std::isfinite(config.processing_scale) ||
+        config.processing_scale <= 0.0 || config.processing_scale > 1.0) {
+        throw std::invalid_argument("processing_scale must be in (0, 1]");
+    }
     validateCropConfig(config.crop);
     if (config.detection_profiles.find("entrance_hole") == config.detection_profiles.end()) {
         throw std::invalid_argument("detection profile entrance_hole is required");

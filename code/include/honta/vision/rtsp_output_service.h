@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -52,7 +53,8 @@ private:
     AVFrame* yuv_frame_ = nullptr;
     AVPacket* packet_ = nullptr;
     SwsContext* sws_context_ = nullptr;
-    int64_t next_pts_ = 0;
+    std::chrono::steady_clock::time_point pts_start_time_;
+    int64_t last_pts_ = -1;
     std::string last_error_;
 };
 

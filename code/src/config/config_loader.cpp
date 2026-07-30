@@ -66,6 +66,7 @@ RuntimeConfig loadRuntimeConfig(const std::string& path) {
         const auto& runtime = root.at("runtime");
         readIfPresent(runtime, "camera_config_path", config.camera_config_path);
         readIfPresent(runtime, "top_cover_data_dir", config.top_cover_data_dir);
+        readIfPresent(runtime, "processing_scale", config.processing_scale);
     }
 
     if (root.contains("crop")) {

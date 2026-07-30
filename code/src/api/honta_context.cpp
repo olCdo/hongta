@@ -315,6 +315,7 @@ void HontaContext::configureDetectionService() {
     config.overlay.public_host = runtime_config_.overlay_public_host;
     config.overlay.port = runtime_config_.overlay_port;
     config.overlay.path = runtime_config_.overlay_path;
+    config.processing_scale = runtime_config_.processing_scale;
     config.crop = runtime_config_.crop;
     config.on_error = [this](const std::string& error) {
         setLastError(error);

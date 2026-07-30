@@ -15,6 +15,8 @@ Honta 是面向 AMR 顶盖标定、圆形目标检测和喇叭口坐标换算的
 | Android 模拟器 | 已提供 `x86_64/libhonta_native.so` |
 | Android native 日志 | 已实现，统一标签为 `HontaNative` |
 | RTSP 凭据脱敏 | 已实现，日志不会输出用户名和密码 |
+| RTSP 低延迟处理 | 已实现，只处理最新输入帧并按墙钟生成发布 PTS |
+| 处理分辨率 | 通用交付配置为 `processing_scale=0.5` |
 | Modbus TCP 通信 | 尚未实现，当前只有未接入业务链路的命令门控类 |
 
 ## 处理链路
@@ -24,7 +26,9 @@ RTSP 摄像头
     ↓
 FFmpeg 解复用和视频解码
     ↓
-裁剪、圆形检测、候选目标更新
+最新帧缓存、裁剪、按比例缩放
+    ↓
+圆形检测、候选目标更新
     ↓
 OpenCV 绘制候选圆、中心十字和运行状态
     ↓
@@ -66,14 +70,14 @@ android_handoff/libs/x86_64/libhonta_native.so
 
 | ABI | 用途 | SHA-256 |
 | --- | --- | --- |
-| `arm64-v8a` | ARM64 安卓真机 | `ABA8F07583A2A4754A8C8866899F45D7E8005B9EBDEE1A132F6E69C6A06A31A7` |
-| `x86_64` | Android Emulator | `880737867685873864F4DEB770A32AE27F59FB8A407845CA4B3CE9AFEDEF0EF1` |
+| `arm64-v8a` | ARM64 安卓真机 | `0C937DF46A64E6031FCC9F22E9AF4F031BF0675313E3A842E1DF398ACF9B728B` |
+| `x86_64` | Android Emulator | `0DACDDF29C080032C44CD358DE8C3542F5D3FB37B417F1028A475BCB661D0FC9` |
 
 两个动态库均启用真实 RTSP 检测，并包含 Android `HontaNative` 日志。
 
 ## 运行配置
 
-`runtime.json` 中当前真正决定 RTSP 输入和 publisher 目标的是 `rtsp` 节点：
+`runtime.json` 中的 `rtsp` 节点决定 RTSP 输入和 publisher 目标，`runtime.processing_scale` 决定检测和叠加流的处理尺寸：
 
 ```json
 {
@@ -83,6 +87,11 @@ android_handoff/libs/x86_64/libhonta_native.so
     "overlay_public_host": "<MediaMTX所在PC的局域网IP>",
     "overlay_port": 8554,
     "overlay_path": "/honta_overlay"
+  },
+  "runtime": {
+    "camera_config_path": "camera/top_rgb_camera.json",
+    "top_cover_data_dir": "top_cover",
+    "processing_scale": 0.5
   }
 }
 ```
@@ -94,9 +103,19 @@ android_handoff/libs/x86_64/libhonta_native.so
 - `overlay_port`：MediaMTX RTSP 监听端口，默认使用 `8554`。
 - `overlay_path`：处理后视频的发布路径。
 - `overlay_bind_ip`：当前配置校验要求非空，publisher 目标仍由 `overlay_public_host` 决定。
+- `processing_scale`：裁剪后的图像缩放比例，默认 `1.0`，有效范围为 `(0, 1]`。输入为 `1280×720`、关闭裁剪且配置为 `0.5` 时，检测和叠加流尺寸为 `640×360`。
 - `debug_rtsp`：当前尚未接入 `HontaContext`，不要把 `/honta_debug` 当作验收路径。
 
+检测器中以像素表示的半径和距离参数会按 `processing_scale` 同步缩放，检测坐标在写入业务结果前会恢复到原始输入坐标系，不需要在配置中手工把半径再除以二。
+
 不要把真实摄像头密码提交到 Git。正式 App 应从受控配置目录读取运行配置。
+
+## 低延迟处理
+
+- FFmpeg 输入线程持续读取摄像头数据，检测线程只获取最新帧；检测速度低于输入帧率时会丢弃过期帧，避免延迟持续累积。
+- 丢帧达到日志阈值时会输出 `FfmpegRtspInput: dropped stale frames ...`，这是低延迟策略生效，不是输入错误。
+- RTSP publisher 使用单调墙钟生成视频 PTS。即使检测只能输出约 3fps，也不会再把数据错误标记为固定 10fps，避免播放器出现“卡住数秒后快速追赶”。
+- `processing_scale=0.5` 用于降低检测和编码开销；它降低处理分辨率，不改变业务坐标输出所使用的原始坐标系。
 
 ## 启动 MediaMTX
 
@@ -273,6 +292,16 @@ init(configPath)
 - MediaMTX 的 `/honta_overlay` 可被 FFprobe 和 FFplay读取。
 - 输出画面包含检测类型、帧号、候选数量、运行状态和中心十字。
 - 测试中观察到摄像头偶发 EOF，自动重连可以恢复 publisher。
+
+## 2026-07-30 低延迟验证
+
+- 最终 strip 后的 ARM64 和 x86_64 交付库已逐字节核对进入测试 APK。
+- ARM64 真机和 x86_64 模拟器均以 `center_horn` 启动，日志出现 `input opened`、`processing frame source=1280x720 scaled=640x360 scale=0.500000` 和 `publisher online`。
+- 测试输入为 `1280×720`、10fps 的标准 H.264 RTSP 流；两个 ABI 的输出均为 MPEG-4 Part 2、`640×360`。
+- ARM64 连续采样中，5.83 秒墙钟对应 4.8 秒 PTS，采集 18 个视频包。
+- x86_64 连续采样中，5.36 秒墙钟对应 4.9 秒 PTS，采集 50 个视频包。
+- 两个设备均未匹配到 `DESCRIBE 404`、`ExoPlaybackException`、检测失败或 publisher 失败日志。
+- 实际处理帧率仍取决于检测耗时；低帧率时画面可能呈现逐帧感，但媒体时间轴不会再出现数秒停顿后集中追赶。
 
 ## 已知限制
 

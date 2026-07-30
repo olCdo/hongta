@@ -34,6 +34,7 @@ struct RuntimeConfig {
     std::string overlay_path = "/honta_overlay";
     std::string camera_config_path;
     std::string top_cover_data_dir;
+    double processing_scale = 1.0;
     CropConfig crop;
     std::map<std::string, DetectionProfileConfig> detection_profiles;
 };

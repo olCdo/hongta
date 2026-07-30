@@ -113,6 +113,8 @@ if(HONTA_HAS_OPENCV)
         code/src/vision/circle_detector.cpp
         code/src/vision/calibration_bridge.cpp
         code/src/vision/frame_crop.cpp
+        code/src/vision/frame_scale.cpp
+        code/src/vision/frame_timestamp.cpp
         code/src/vision/rtsp_reader.cpp
         code/src/vision/detection_session.cpp
     )
@@ -121,6 +123,7 @@ if(HONTA_HAS_OPENCV)
         target_sources(honta_vision
             PRIVATE
                 code/src/vision/ffmpeg_rtsp_input.cpp
+                code/src/vision/latest_frame_mailbox.cpp
                 code/src/vision/rtsp_output_service.cpp
                 code/src/vision/detection_service.cpp
         )
@@ -242,6 +245,48 @@ if(BUILD_TESTING AND NOT ANDROID)
     add_test(NAME honta_native_log_test COMMAND honta_native_log_test)
 
     if(HONTA_HAS_OPENCV AND HONTA_HAS_FFMPEG)
+        add_executable(honta_frame_scale_test
+            code/tests/frame_scale_test.cpp
+        )
+
+        target_link_libraries(honta_frame_scale_test
+            PRIVATE
+                honta_vision
+        )
+
+        add_test(
+            NAME honta_frame_scale_test
+            COMMAND honta_frame_scale_test
+        )
+
+        add_executable(honta_latest_frame_mailbox_test
+            code/tests/latest_frame_mailbox_test.cpp
+        )
+
+        target_link_libraries(honta_latest_frame_mailbox_test
+            PRIVATE
+                honta_vision
+        )
+
+        add_test(
+            NAME honta_latest_frame_mailbox_test
+            COMMAND honta_latest_frame_mailbox_test
+        )
+
+        add_executable(honta_frame_timestamp_test
+            code/tests/frame_timestamp_test.cpp
+        )
+
+        target_link_libraries(honta_frame_timestamp_test
+            PRIVATE
+                honta_vision
+        )
+
+        add_test(
+            NAME honta_frame_timestamp_test
+            COMMAND honta_frame_timestamp_test
+        )
+
         add_executable(honta_detection_service_error_test
             code/tests/detection_service_error_test.cpp
         )

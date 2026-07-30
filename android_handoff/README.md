@@ -29,8 +29,8 @@ docs/
 
 | ABI | 文件大小 | SHA-256 |
 | --- | ---: | --- |
-| `arm64-v8a` | 29,076,264 字节 | `ABA8F07583A2A4754A8C8866899F45D7E8005B9EBDEE1A132F6E69C6A06A31A7` |
-| `x86_64` | 29,285,840 字节 | `880737867685873864F4DEB770A32AE27F59FB8A407845CA4B3CE9AFEDEF0EF1` |
+| `arm64-v8a` | 29,097,688 字节 | `0C937DF46A64E6031FCC9F22E9AF4F031BF0675313E3A842E1DF398ACF9B728B` |
+| `x86_64` | 29,308,208 字节 | `0DACDDF29C080032C44CD358DE8C3542F5D3FB37B417F1028A475BCB661D0FC9` |
 
 两个文件均满足：
 
@@ -39,6 +39,8 @@ docs/
 - 链接 Android `liblog.so`。
 - 保留核心 C API 导出。
 - 日志会脱敏 RTSP 用户名和密码。
+- 检测线程只处理最新输入帧，避免旧帧堆积。
+- 发布 PTS 按单调墙钟生成，避免播放器停顿后追赶。
 - 发布文件已执行 `strip --strip-unneeded`。
 
 ## 复制到 Android 工程
@@ -88,11 +90,25 @@ RTSP 配置示例：
     "overlay_public_host": "<MediaMTX所在PC的局域网IP>",
     "overlay_port": 8554,
     "overlay_path": "/honta_overlay"
+  },
+  "runtime": {
+    "camera_config_path": "camera/top_rgb_camera.json",
+    "top_cover_data_dir": "top_cover",
+    "processing_scale": 0.5
   }
 }
 ```
 
+`processing_scale` 默认值为 `1.0`，有效范围为 `(0, 1]`。关闭裁剪时，`1280×720` 输入配置为 `0.5` 后会输出 `640×360` 检测叠加流。检测参数会随比例缩放，返回给业务层的坐标仍使用原始输入坐标系。
+
 不要在正式仓库或日志中写入真实密码。
+
+## 低延迟行为
+
+- 输入线程持续读取 RTSP，仅向检测线程保留最新帧；处理速度不足时会主动丢弃过期帧。
+- 日志中的 `dropped stale frames` 表示低延迟策略正在工作，不代表摄像头断流。
+- publisher 按真实经过时间生成 PTS，避免实际约 3fps 的数据被错误标记为固定 10fps。
+- 播放端仍会受实际检测帧率限制而呈现逐帧感，但不应再出现数秒停顿后集中快放。
 
 ## Java 调用示例
 
@@ -195,6 +211,14 @@ MediaMTX 已收到播放器请求，但 publisher 尚未上线。检查 Android 
 - FFprobe、FFmpeg 和 FFplay 可以读取处理流。
 - 输出画面包含检测状态和中心十字。
 - 摄像头 EOF 后自动重连可以恢复 publisher。
+
+## 2026-07-30 低延迟验证记录
+
+- ARM64 真机和 x86_64 模拟器均成功加载本目录中的最终交付库。
+- 两个 ABI 均完成 `center_horn`、`1280×720 → 640×360`、`publisher online` 端到端验证。
+- ARM64 的 5.83 秒墙钟采样覆盖 4.8 秒 PTS；x86_64 的 5.36 秒墙钟采样覆盖 4.9 秒 PTS。
+- FFprobe 确认输出为 MPEG-4 Part 2、`640×360`，且未发现 `404`、检测失败或 publisher 失败。
+- 验证 APK、现场地址和测试流未包含在本交付包中。
 
 完整工程说明请阅读：
 

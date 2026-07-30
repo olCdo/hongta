@@ -1,7 +1,10 @@
 #include "honta/vision/rtsp_output_service.h"
 
+#include <chrono>
 #include <sstream>
 #include <utility>
+
+#include "honta/vision/frame_timestamp.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -101,6 +104,8 @@ bool InternalRtspOutputService::open(int width, int height) {
         return false;
     }
 
+    pts_start_time_ = std::chrono::steady_clock::now();
+    last_pts_ = -1;
     return true;
 }
 
@@ -116,7 +121,17 @@ bool InternalRtspOutputService::write(const cv::Mat& bgr_frame) {
     if (!convertBgrToYuv(bgr_frame)) {
         return false;
     }
-    yuv_frame_->pts = next_pts_++;
+    const int64_t elapsed_micros =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - pts_start_time_)
+            .count();
+    const int ticks_per_second = codec_context_->time_base.den /
+                                 codec_context_->time_base.num;
+    yuv_frame_->pts = elapsedMicrosToMonotonicPts(
+        elapsed_micros,
+        ticks_per_second,
+        last_pts_);
+    last_pts_ = yuv_frame_->pts;
     return writeEncodedFrame(yuv_frame_);
 }
 
@@ -146,7 +161,8 @@ void InternalRtspOutputService::close() {
         format_context_ = nullptr;
     }
     stream_ = nullptr;
-    next_pts_ = 0;
+    pts_start_time_ = {};
+    last_pts_ = -1;
 }
 
 bool InternalRtspOutputService::isOpen() const {
