@@ -39,6 +39,14 @@ void readAliasIfPresent(const nlohmann::json& object,
     }
 }
 
+void rejectLegacyCropFields(const nlohmann::json& crop) {
+    if (crop.contains("x") || crop.contains("y") ||
+        crop.contains("width") || crop.contains("height")) {
+        throw std::invalid_argument(
+            "crop x/y/width/height are no longer supported; use left/top/right/bottom");
+    }
+}
+
 }  // namespace
 
 RuntimeConfig loadRuntimeConfig(const std::string& path) {
@@ -58,6 +66,20 @@ RuntimeConfig loadRuntimeConfig(const std::string& path) {
         const auto& runtime = root.at("runtime");
         readIfPresent(runtime, "camera_config_path", config.camera_config_path);
         readIfPresent(runtime, "top_cover_data_dir", config.top_cover_data_dir);
+        readIfPresent(runtime, "processing_scale", config.processing_scale);
+    }
+
+    if (root.contains("crop")) {
+        const auto& crop = root.at("crop");
+        if (!crop.is_object()) {
+            throw std::invalid_argument("crop must be a JSON object");
+        }
+        rejectLegacyCropFields(crop);
+        readIfPresent(crop, "enabled", config.crop.enabled);
+        readIfPresent(crop, "left", config.crop.left);
+        readIfPresent(crop, "top", config.crop.top);
+        readIfPresent(crop, "right", config.crop.right);
+        readIfPresent(crop, "bottom", config.crop.bottom);
     }
 
     if (root.contains("detection_profiles")) {

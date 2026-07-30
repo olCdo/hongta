@@ -3,6 +3,16 @@
   "version-string": "0.1.0",
   "dependencies": [
     "ffmpeg",
-    "opencv4"
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": [
+        "calib3d",
+        "ffmpeg",
+        "jpeg",
+        "png",
+        "thread"
+      ]
+    }
   ]
 }

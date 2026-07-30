@@ -1,13 +1,36 @@
 #include "honta/vision/detection_service.h"
 
 #include <chrono>
+#include <exception>
 #include <iomanip>
 #include <sstream>
 #include <utility>
 
 #include <opencv2/imgproc.hpp>
 
+#include "honta/logging/native_log.h"
+#include "honta/vision/frame_crop.h"
+#include "honta/vision/frame_scale.h"
+
 namespace honta::vision {
+namespace {
+
+class WorkerLogGuard {
+public:
+    explicit WorkerLogGuard(std::string detect_type)
+        : detect_type_(std::move(detect_type)) {}
+
+    ~WorkerLogGuard() {
+        honta::logging::info(
+            "DetectionService",
+            "worker stopped detect_type=" + detect_type_);
+    }
+
+private:
+    std::string detect_type_;
+};
+
+}  // namespace
 
 DetectionService::DetectionService() = default;
 
@@ -18,7 +41,6 @@ DetectionService::~DetectionService() {
 void DetectionService::configure(DetectionServiceConfig config) {
     stopDetect();
     config_ = std::move(config);
-    last_error_.clear();
 }
 
 bool DetectionService::startDetect(const std::string& detect_type) {
@@ -44,17 +66,25 @@ bool DetectionService::startDetect(const std::string& detect_type) {
 
     stopDetect();
     stop_requested_.store(false);
-    last_error_.clear();
     session_.reset(detect_type,
                    config_.input.url,
                    overlayRtspUrl(),
                    config_.debug_output_enabled ? debugRtspUrl() : std::string{});
+    honta::logging::info(
+        "DetectionService",
+        "start detect_type=" + detect_type);
     worker_ = std::thread(&DetectionService::workerLoop, this, detect_type, profile_iter->second);
     return true;
 }
 
 void DetectionService::stopDetect() {
+    const bool worker_was_running = worker_.joinable();
+    if (worker_was_running) {
+        honta::logging::info("DetectionService", "stop requested");
+    }
     stop_requested_.store(true);
+    input_worker_stop_.store(true);
+    input_mailbox_.stop();
     const DetectionSessionSnapshot current = session_.snapshot();
     if (isRunningState(current.state)) {
         session_.setState(DetectionSessionState::Stopping);
@@ -68,9 +98,7 @@ void DetectionService::stopDetect() {
     if (debug_output_) {
         debug_output_->close();
     }
-    if (input_) {
-        input_->close();
-    }
+    closeInput();
     session_.clear();
     stop_requested_.store(false);
 }
@@ -95,12 +123,14 @@ std::string DetectionService::debugRtspUrl() const {
     return output.playbackUrl();
 }
 
-const std::string& DetectionService::lastError() const {
-    return last_error_;
+std::string DetectionService::lastError() const {
+    return session_.snapshot().last_error;
 }
 
 void DetectionService::workerLoop(std::string detect_type, DetectionProfile profile) {
-    CircleDetector detector(profile.detector_config);
+    WorkerLogGuard worker_log(detect_type);
+    CircleDetector detector(
+        scaleDetectorConfig(profile.detector_config, config_.processing_scale));
     int reconnect_attempts = 0;
     int frame_id = 0;
 
@@ -108,24 +138,49 @@ void DetectionService::workerLoop(std::string detect_type, DetectionProfile prof
         session_.setState(reconnect_attempts == 0 ? DetectionSessionState::Starting
                                                   : DetectionSessionState::Reconnecting);
         if (!openInput()) {
+            if (stop_requested_.load()) {
+                break;
+            }
             ++reconnect_attempts;
             if (reconnect_attempts > config_.max_reconnect_attempts) {
                 session_.setState(DetectionSessionState::Error);
                 return;
             }
+            honta::logging::warning(
+                "DetectionService",
+                "reconnecting input attempt=" + std::to_string(reconnect_attempts));
             std::this_thread::sleep_for(std::chrono::milliseconds(config_.reconnect_interval_ms));
             continue;
         }
 
         reconnect_attempts = 0;
         session_.setState(DetectionSessionState::Running);
+        std::uint64_t input_cursor = 0;
+        std::uint64_t skipped_frames_total = 0;
+        std::uint64_t skipped_frames_last_log = 0;
 
         while (!stop_requested_.load()) {
             DecodedFrame decoded;
-            if (!input_->read(decoded)) {
-                setError(input_->lastError());
+            std::uint64_t skipped_frames = 0;
+            const LatestFrameWaitResult input_result = input_mailbox_.waitNext(
+                decoded,
+                input_cursor,
+                skipped_frames,
+                std::chrono::milliseconds(100));
+            if (input_result == LatestFrameWaitResult::Timeout) {
+                continue;
+            }
+            if (input_result != LatestFrameWaitResult::Frame) {
+                if (stop_requested_.load()) {
+                    break;
+                }
+                const std::string input_error =
+                    input_result == LatestFrameWaitResult::Error
+                        ? input_mailbox_.lastError()
+                        : "RTSP input reader stopped";
+                setError("input read failed: " + input_error);
                 session_.setState(DetectionSessionState::Reconnecting);
-                input_->close();
+                closeInput();
                 if (output_) {
                     output_->close();
                 }
@@ -135,29 +190,81 @@ void DetectionService::workerLoop(std::string detect_type, DetectionProfile prof
                 ++reconnect_attempts;
                 break;
             }
+            if (skipped_frames > 0) {
+                skipped_frames_total += skipped_frames;
+                if (skipped_frames_last_log == 0 ||
+                    skipped_frames_total - skipped_frames_last_log >= 100) {
+                    honta::logging::info(
+                        "FfmpegRtspInput",
+                        "dropped stale frames total=" +
+                            std::to_string(skipped_frames_total) +
+                            " latest_sequence=" + std::to_string(input_cursor));
+                    skipped_frames_last_log = skipped_frames_total;
+                }
+            }
+
+            cv::Rect crop_rect;
+            cv::Mat cropped_frame;
+            try {
+                cropped_frame = cropFrame(decoded.bgr, config_.crop, &crop_rect);
+            } catch (const std::exception& error) {
+                setError(std::string("invalid crop configuration: ") + error.what());
+                session_.setState(DetectionSessionState::Error);
+                closeInput();
+                return;
+            }
+
+            cv::Mat processing_frame = cropped_frame;
+            if (config_.processing_scale < 1.0) {
+                cv::resize(cropped_frame,
+                           processing_frame,
+                           scaledFrameSize(cropped_frame.size(),
+                                           config_.processing_scale),
+                           0.0,
+                           0.0,
+                           cv::INTER_AREA);
+            }
 
             ++frame_id;
-            std::vector<CircleDetection> detections = detector.detect(decoded.bgr);
-            session_.updateCandidates(detect_type, frame_id, detections);
+            if (frame_id == 1) {
+                honta::logging::info(
+                    "DetectionService",
+                    "processing frame source=" +
+                        std::to_string(cropped_frame.cols) + "x" +
+                        std::to_string(cropped_frame.rows) +
+                        " scaled=" + std::to_string(processing_frame.cols) +
+                        "x" + std::to_string(processing_frame.rows) +
+                        " scale=" + std::to_string(config_.processing_scale));
+            }
+            std::vector<CircleDetection> local_detections =
+                detector.detect(processing_frame);
+            std::vector<CircleDetection> full_frame_detections =
+                restoreDetectionsToInput(local_detections,
+                                         config_.processing_scale,
+                                         crop_rect.tl());
+            session_.updateCandidates(detect_type, frame_id, full_frame_detections);
 
-            cv::Mat overlay = drawOverlay(decoded.bgr,
-                                          detections,
+            cv::Mat overlay = drawOverlay(processing_frame,
+                                          local_detections,
                                           frame_id,
                                           detect_type,
                                           session_.snapshot().state);
             if (!openOutputIfNeeded(overlay)) {
                 session_.setState(DetectionSessionState::Error);
+                closeInput();
                 return;
             }
             if (!output_->write(overlay)) {
-                setError(output_->lastError());
+                setError("publisher write failed: " + output_->lastError());
                 session_.setState(DetectionSessionState::Error);
+                closeInput();
                 return;
             }
 
             if (config_.debug_output_enabled) {
-                PreprocessDebugImages debug_images = detector.buildPreprocessDebugImages(decoded.bgr);
-                cv::Mat debug_overlay = drawDebugOverlay(decoded.bgr,
+                PreprocessDebugImages debug_images =
+                    detector.buildPreprocessDebugImages(processing_frame);
+                cv::Mat debug_overlay = drawDebugOverlay(processing_frame,
                                                          debug_images,
                                                          overlay,
                                                          frame_id,
@@ -165,11 +272,14 @@ void DetectionService::workerLoop(std::string detect_type, DetectionProfile prof
                                                          session_.snapshot().state);
                 if (!openDebugOutputIfNeeded(debug_overlay)) {
                     session_.setState(DetectionSessionState::Error);
+                    closeInput();
                     return;
                 }
                 if (!debug_output_->write(debug_overlay)) {
-                    setError(debug_output_->lastError());
+                    setError("debug publisher write failed: " +
+                             debug_output_->lastError());
                     session_.setState(DetectionSessionState::Error);
+                    closeInput();
                     return;
                 }
             }
@@ -185,16 +295,64 @@ void DetectionService::workerLoop(std::string detect_type, DetectionProfile prof
         }
     }
 
+    closeInput();
     session_.setState(DetectionSessionState::Idle);
 }
 
 bool DetectionService::openInput() {
-    input_ = std::make_unique<FfmpegRtspInput>(config_.input);
-    if (!input_->open(&stop_requested_)) {
-        setError(input_->lastError());
+    closeInput();
+    input_worker_stop_.store(false);
+    input_mailbox_.reset();
+    if (stop_requested_.load()) {
         return false;
     }
+
+    honta::logging::info(
+        "FfmpegRtspInput",
+        "opening input=" +
+            honta::logging::redactRtspCredentials(config_.input.url));
+    input_ = std::make_unique<FfmpegRtspInput>(config_.input);
+    if (!input_->open(&input_worker_stop_)) {
+        if (!stop_requested_.load()) {
+            setError(input_->lastError());
+        }
+        return false;
+    }
+    if (stop_requested_.load()) {
+        closeInput();
+        return false;
+    }
+    input_worker_ = std::thread(&DetectionService::inputReaderLoop, this);
+    honta::logging::info("FfmpegRtspInput", "input opened");
     return true;
+}
+
+void DetectionService::inputReaderLoop() {
+    while (!stop_requested_.load() && !input_worker_stop_.load()) {
+        DecodedFrame decoded;
+        if (!input_->read(decoded)) {
+            if (!stop_requested_.load() && !input_worker_stop_.load()) {
+                input_mailbox_.fail(input_->lastError());
+            } else {
+                input_mailbox_.stop();
+            }
+            return;
+        }
+        input_mailbox_.publish(std::move(decoded));
+    }
+    input_mailbox_.stop();
+}
+
+void DetectionService::closeInput() {
+    input_worker_stop_.store(true);
+    input_mailbox_.stop();
+    if (input_worker_.joinable()) {
+        input_worker_.join();
+    }
+    if (input_) {
+        input_->close();
+        input_.reset();
+    }
 }
 
 bool DetectionService::openOutputIfNeeded(const cv::Mat& frame) {
@@ -202,10 +360,15 @@ bool DetectionService::openOutputIfNeeded(const cv::Mat& frame) {
         return true;
     }
     output_ = std::make_unique<InternalRtspOutputService>(config_.overlay);
+    honta::logging::info(
+        "RtspPublisher",
+        "opening publisher=" +
+            honta::logging::redactRtspCredentials(output_->playbackUrl()));
     if (!output_->open(frame.cols, frame.rows)) {
-        setError(output_->lastError());
+        setError("publisher open failed: " + output_->lastError());
         return false;
     }
+    honta::logging::info("RtspPublisher", "publisher online");
     return true;
 }
 
@@ -214,10 +377,16 @@ bool DetectionService::openDebugOutputIfNeeded(const cv::Mat& frame) {
         return true;
     }
     debug_output_ = std::make_unique<InternalRtspOutputService>(config_.debug_overlay);
+    honta::logging::info(
+        "RtspDebugPublisher",
+        "opening publisher=" +
+            honta::logging::redactRtspCredentials(debug_output_->playbackUrl()));
     if (!debug_output_->open(frame.cols, frame.rows)) {
-        setError(debug_output_->lastError());
+        setError("debug publisher open failed: " +
+                 debug_output_->lastError());
         return false;
     }
+    honta::logging::info("RtspDebugPublisher", "publisher online");
     return true;
 }
 
@@ -237,6 +406,32 @@ cv::Mat DetectionService::drawOverlay(const cv::Mat& frame,
     const int thickness = std::max(2, static_cast<int>(std::round(scale * 2.0)));
     const int radius_center = std::max(3, static_cast<int>(std::round(scale * 4.0)));
     const cv::Scalar color{0, 255, 80};
+    const cv::Point crop_center(output.cols / 2, output.rows / 2);
+    const int center_arm = std::max(12, std::min(output.cols, output.rows) / 32);
+    cv::line(output,
+             {crop_center.x - center_arm, crop_center.y},
+             {crop_center.x + center_arm, crop_center.y},
+             {0, 0, 0},
+             thickness + 2,
+             cv::LINE_AA);
+    cv::line(output,
+             {crop_center.x, crop_center.y - center_arm},
+             {crop_center.x, crop_center.y + center_arm},
+             {0, 0, 0},
+             thickness + 2,
+             cv::LINE_AA);
+    cv::line(output,
+             {crop_center.x - center_arm, crop_center.y},
+             {crop_center.x + center_arm, crop_center.y},
+             {0, 255, 255},
+             thickness,
+             cv::LINE_AA);
+    cv::line(output,
+             {crop_center.x, crop_center.y - center_arm},
+             {crop_center.x, crop_center.y + center_arm},
+             {0, 255, 255},
+             thickness,
+             cv::LINE_AA);
 
     for (std::size_t i = 0; i < detections.size(); ++i) {
         const CircleDetection& detection = detections[i];
@@ -320,8 +515,21 @@ cv::Mat DetectionService::drawDebugOverlay(const cv::Mat& frame,
 }
 
 void DetectionService::setError(const std::string& error) {
-    last_error_ = error;
     session_.setLastError(error);
+    honta::logging::error("DetectionService", error);
+    if (config_.on_error) {
+        try {
+            config_.on_error(error);
+        } catch (const std::exception& callback_error) {
+            honta::logging::error(
+                "DetectionService",
+                std::string("error callback failed: ") + callback_error.what());
+        } catch (...) {
+            honta::logging::error(
+                "DetectionService",
+                "error callback failed with unknown exception");
+        }
+    }
 }
 
 bool DetectionService::isRunningState(DetectionSessionState state) const {

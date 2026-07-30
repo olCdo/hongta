@@ -18,6 +18,14 @@ struct DetectionProfileConfig {
     int max_results = 20;
 };
 
+struct CropConfig {
+    bool enabled = false;
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+};
+
 struct RuntimeConfig {
     std::string input_rtsp_url;
     std::string overlay_bind_ip = "0.0.0.0";
@@ -26,9 +34,12 @@ struct RuntimeConfig {
     std::string overlay_path = "/honta_overlay";
     std::string camera_config_path;
     std::string top_cover_data_dir;
+    double processing_scale = 1.0;
+    CropConfig crop;
     std::map<std::string, DetectionProfileConfig> detection_profiles;
 };
 
+void validateCropConfig(const CropConfig& config);
 void validateRuntimeConfig(const RuntimeConfig& config);
 
 }  // namespace honta::config

@@ -7,7 +7,7 @@
 - `LatestFrameReader`：PC 调试用后台读取器，只保留最新帧，降低 RTSP 显示延迟。
 - `detect_stream_demo`：当前唯一维护的 PC 实时调试工具，支持 USB 摄像头和 RTSP 输入。
 
-正式 Android 方向是 native RTSP 输入/输出和 FFmpeg 解码/编码管线；本模块当前阶段先保留帧级算法和 PC 调试能力，不在 `detect_stream_demo` 中实现最终 Android 管线。
+正式 Android 方向是 C++ 动态库内部接入 RTSP，使用 FFmpeg 解码，并通过后台识别服务维护候选编号和圈注画面；APP 不走逐帧传图主链路，也不需要获取识别候选 JSON。APP 只把用户选择的候选编号传回动态库，由动态库保存标定状态并计算坐标。本模块当前阶段先保留 PC 调试能力，不在 `detect_stream_demo` 中实现最终 Android 管线。
 
 ## 目录结构
 
@@ -80,9 +80,10 @@ $env:Path = "D:\opencv\build\x64\vc16\bin;$env:Path"
 
 下一阶段重点：
 
-1. 设计 `honta_api.h` C ABI。
-2. 设计 native FFmpeg RTSP 输入/输出管线，包含正式 RTSP 流和 debug RTSP 四宫格流。
-3. 增加 Android NDK `arm64-v8a` 构建。
-4. 基于真实补光样本重新标定默认参数。
+1. 基于真实补光样本重新标定入口通孔和中心喇叭口默认参数。
+2. 固定相机参数、顶盖数据和坐标系定义。
+3. 设计 `honta_api.h` C ABI，包含开始识别、停止识别、入口候选确认、中心候选确认、全部喇叭口坐标计算和按喇叭口序号查询坐标。
+4. 设计 native FFmpeg RTSP 输入和后台识别服务。
+5. 增加 Android NDK `arm64-v8a` 构建。
 
 

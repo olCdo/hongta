@@ -1,36 +1,72 @@
-# Honta Android Handoff Package
+# Honta Android 动态库交付包
 
-This directory is the minimal package for Android integration.
+本目录是交付给 Android 工程师的最小集成包，包含两个 ABI 的真实 RTSP 检测库、C API、Java 封装示例、运行配置和接口文档。
 
-## Contents
+## 目录内容
 
 ```text
 libs/
-  arm64-v8a/libhonta_native.so          Native library for Android devices
-  x86_64/libhonta_native.so             Native library for Android Emulator
+  arm64-v8a/libhonta_native.so      ARM64 安卓真机动态库
+  x86_64/libhonta_native.so         Android Emulator 动态库
+
 configs/
-  runtime.json                          Runtime configuration
-  camera/top_rgb_camera.json            Camera intrinsic and mounting configuration
-  top_cover/A001.json                   Top-cover model data
+  runtime.json                      运行配置
+  camera/top_rgb_camera.json        相机内参和安装配置
+  top_cover/A001.json               顶盖模型
+
 api/
-  honta_api.h                           C ABI header
+  honta_api.h                       C ABI 头文件
+
 java/
-  com/honta/vision/HontaNative.java     Java wrapper example
+  com/honta/vision/HontaNative.java
   com/honta/vision/HontaNativeController.java
+
 docs/
-  android_api_reference.md              Android API reference
+  android_api_reference.md          Android API 参考
 ```
 
-## Android Placement
+## 发布文件
 
-Copy native libraries into the Android app:
+| ABI | 文件大小 | SHA-256 |
+| --- | ---: | --- |
+| `arm64-v8a` | 29,097,688 字节 | `0C937DF46A64E6031FCC9F22E9AF4F031BF0675313E3A842E1DF398ACF9B728B` |
+| `x86_64` | 29,308,208 字节 | `0DACDDF29C080032C44CD358DE8C3542F5D3FB37B417F1028A475BCB661D0FC9` |
+
+两个文件均满足：
+
+- 启用真实 RTSP 检测。
+- 包含 `HontaNative` Android 日志。
+- 链接 Android `liblog.so`。
+- 保留核心 C API 导出。
+- 日志会脱敏 RTSP 用户名和密码。
+- 检测线程只处理最新输入帧，避免旧帧堆积。
+- 发布 PTS 按单调墙钟生成，避免播放器停顿后追赶。
+- 发布文件已执行 `strip --strip-unneeded`。
+
+## 复制到 Android 工程
+
+ARM64 真机：
 
 ```text
 app/src/main/jniLibs/arm64-v8a/libhonta_native.so
+```
+
+x86_64 模拟器：
+
+```text
 app/src/main/jniLibs/x86_64/libhonta_native.so
 ```
 
-Copy config files into an app-readable directory while preserving this structure:
+必须同时提供 JNI bridge。可以直接参考：
+
+```text
+../android/app/src/main/cpp/HontaNativeBridge.cpp
+../android/app/src/main/cpp/CMakeLists.txt
+```
+
+## 配置文件部署
+
+保持以下相对目录结构：
 
 ```text
 runtime.json
@@ -38,19 +74,154 @@ camera/top_rgb_camera.json
 top_cover/A001.json
 ```
 
-Pass the absolute device path of `runtime.json` to:
+将配置复制到 App 可读目录后，把 `runtime.json` 的绝对路径传给：
 
 ```java
 HontaNative.init(configPath);
 ```
 
-## Build Notes
+RTSP 配置示例：
 
-The included `libhonta_native.so` files were built with real RTSP detection enabled:
-
-```text
-HONTA_ENABLE_MOCK_DETECTION=OFF
-HONTA_HAS_REAL_DETECTION=ON
+```json
+{
+  "rtsp": {
+    "input_url": "rtsp://<用户名>:<密码>@<摄像头IP>:554/11",
+    "overlay_bind_ip": "0.0.0.0",
+    "overlay_public_host": "<MediaMTX所在PC的局域网IP>",
+    "overlay_port": 8554,
+    "overlay_path": "/honta_overlay"
+  },
+  "runtime": {
+    "camera_config_path": "camera/top_rgb_camera.json",
+    "top_cover_data_dir": "top_cover",
+    "processing_scale": 0.5
+  }
+}
 ```
 
-The native code includes the crop detection path: frames are cropped before circle detection, detected centers are offset back to original full-frame coordinates, and those full-frame coordinates are passed into calibration and map coordinate solving.
+`processing_scale` 默认值为 `1.0`，有效范围为 `(0, 1]`。关闭裁剪时，`1280×720` 输入配置为 `0.5` 后会输出 `640×360` 检测叠加流。检测参数会随比例缩放，返回给业务层的坐标仍使用原始输入坐标系。
+
+不要在正式仓库或日志中写入真实密码。
+
+## 低延迟行为
+
+- 输入线程持续读取 RTSP，仅向检测线程保留最新帧；处理速度不足时会主动丢弃过期帧。
+- 日志中的 `dropped stale frames` 表示低延迟策略正在工作，不代表摄像头断流。
+- publisher 按真实经过时间生成 PTS，避免实际约 3fps 的数据被错误标记为固定 10fps。
+- 播放端仍会受实际检测帧率限制而呈现逐帧感，但不应再出现数秒停顿后集中快放。
+
+## Java 调用示例
+
+```java
+HontaNative.init(configPath);
+HontaNative.setTopCoverModel("A001");
+
+String outputUrl = HontaNative.getOverlayRtspUrl();
+HontaNative.startDetect("entrance_hole");
+
+// 业务层确认入口候选后再切换检测类型。
+HontaNative.confirmEntranceCandidate(
+        candidateId,
+        entranceHoleNo,
+        heightMm,
+        amrX,
+        amrY,
+        amrYaw);
+
+HontaNative.startDetect("center_horn");
+
+// 页面或业务任务结束时必须释放。
+HontaNative.stopDetect();
+HontaNative.release();
+```
+
+耗时调用不能在 Android UI 线程执行。推荐通过 `HontaNativeController` 或单线程 executor 串行管理 native 生命周期。
+
+## 查看 native 日志
+
+```powershell
+adb -s <设备序列号> logcat -c
+adb -s <设备序列号> logcat -v time `
+  "HontaNative:V" `
+  "AndroidRuntime:E" `
+  "*:S"
+```
+
+正常发布日志：
+
+```text
+FfmpegRtspInput: opening input=rtsp://***@<摄像头IP>:554/11
+FfmpegRtspInput: input opened
+RtspPublisher: opening publisher=rtsp://<PC-IP>:8554/honta_overlay
+RtspPublisher: publisher online
+```
+
+## MediaMTX 验证
+
+MediaMTX 默认 RTSP 端口：
+
+```text
+8554
+```
+
+处理流：
+
+```text
+rtsp://<PC-IP>:8554/honta_overlay
+```
+
+验证：
+
+```powershell
+ffprobe -rtsp_transport tcp `
+  rtsp://<PC-IP>:8554/honta_overlay
+
+ffplay -rtsp_transport tcp `
+  rtsp://<PC-IP>:8554/honta_overlay
+```
+
+## 错误解释
+
+### `no stream is available on path`
+
+MediaMTX 已收到播放器请求，但 publisher 尚未上线。检查 Android 日志中是否出现 `publisher online`。
+
+### `failed to read RTSP packet: End of file`
+
+摄像头结束当前 RTSP 会话。检测服务会自动重连摄像头并重新建立 publisher。
+
+### 候选确认失败
+
+当前画面中没有对应候选编号。候选确认失败不等于 RTSP 输入或 publisher 失败。
+
+## 已知限制
+
+1. 当前 Android FFmpeg 构建没有 `libx264` 时，publisher 会回退为 MPEG-4 Part 2。正式要求 H.264 时必须补齐 H.264 编码器。
+2. `debug_rtsp` 尚未接入实际运行链路。
+3. 模拟器网络可能受 AVD 配置影响，最终网络和性能验收应使用 ARM64 真机。
+4. 本交付包不包含 Modbus TCP 通信实现。
+
+## 2026-07-27 验证记录
+
+- 真实摄像头输入：HEVC，`1920×1080`，20fps。
+- x86_64 `.so` 在 Android Emulator 中成功加载。
+- native 日志出现 `input opened` 和 `publisher online`。
+- MediaMTX 成功接收 `/honta_overlay`。
+- 输出为 `1280×720`、10fps。
+- FFprobe、FFmpeg 和 FFplay 可以读取处理流。
+- 输出画面包含检测状态和中心十字。
+- 摄像头 EOF 后自动重连可以恢复 publisher。
+
+## 2026-07-30 低延迟验证记录
+
+- ARM64 真机和 x86_64 模拟器均成功加载本目录中的最终交付库。
+- 两个 ABI 均完成 `center_horn`、`1280×720 → 640×360`、`publisher online` 端到端验证。
+- ARM64 的 5.83 秒墙钟采样覆盖 4.8 秒 PTS；x86_64 的 5.36 秒墙钟采样覆盖 4.9 秒 PTS。
+- FFprobe 确认输出为 MPEG-4 Part 2、`640×360`，且未发现 `404`、检测失败或 publisher 失败。
+- 验证 APK、现场地址和测试流未包含在本交付包中。
+
+完整工程说明请阅读：
+
+- `../readme.md`
+- `../android/README.md`
+- `docs/android_api_reference.md`

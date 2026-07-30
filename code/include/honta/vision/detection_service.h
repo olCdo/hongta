@@ -1,13 +1,16 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
 #include <thread>
 
+#include "honta/config/runtime_config.h"
 #include "honta/vision/detection_session.h"
 #include "honta/vision/ffmpeg_rtsp_input.h"
+#include "honta/vision/latest_frame_mailbox.h"
 #include "honta/vision/rtsp_output_service.h"
 
 namespace honta::vision {
@@ -24,6 +27,9 @@ struct DetectionServiceConfig {
     int reconnect_interval_ms = 1000;
     int max_reconnect_attempts = 60;
     bool debug_output_enabled = false;
+    double processing_scale = 1.0;
+    honta::config::CropConfig crop;
+    std::function<void(const std::string&)> on_error;
 };
 
 class DetectionService {
@@ -43,11 +49,13 @@ public:
                                                     const std::string& expected_detect_type) const;
     std::string overlayRtspUrl() const;
     std::string debugRtspUrl() const;
-    const std::string& lastError() const;
+    std::string lastError() const;
 
 private:
     void workerLoop(std::string detect_type, DetectionProfile profile);
     bool openInput();
+    void inputReaderLoop();
+    void closeInput();
     bool openOutputIfNeeded(const cv::Mat& frame);
     bool openDebugOutputIfNeeded(const cv::Mat& frame);
     cv::Mat drawOverlay(const cv::Mat& frame,
@@ -67,11 +75,13 @@ private:
     DetectionServiceConfig config_;
     DetectionSession session_;
     std::unique_ptr<FfmpegRtspInput> input_;
+    LatestFrameMailbox input_mailbox_;
+    std::thread input_worker_;
+    std::atomic_bool input_worker_stop_{false};
     std::unique_ptr<InternalRtspOutputService> output_;
     std::unique_ptr<InternalRtspOutputService> debug_output_;
     std::thread worker_;
     std::atomic_bool stop_requested_{false};
-    std::string last_error_;
 };
 
 }  // namespace honta::vision
